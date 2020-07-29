@@ -15,7 +15,7 @@ import os
 import numpy as np
 
 from src.core import prof
-from src.env_utils import FrameStack, Environment, Minigrid2Image
+from src.env_utils import FrameStack, Environment, Minigrid2Image, ActionActedWrapper
 from src import atari_wrappers as atari_wrappers
 
 from gym_minigrid import wrappers as wrappers
@@ -59,7 +59,8 @@ Buffers = typing.Dict[str, typing.List[torch.Tensor]]
 
 def create_env(flags):
     if 'MiniGrid' in flags.env:
-        return Minigrid2Image(wrappers.FullyObsWrapper(gym.make(flags.env)))
+        # Added action wrapper to know if the agent acted in env
+        return ActionActedWrapper(Minigrid2Image(wrappers.FullyObsWrapper(gym.make(flags.env))))
     elif 'Mario' in flags.env:
         env = atari_wrappers.wrap_pytorch(
             atari_wrappers.wrap_deepmind(
@@ -125,6 +126,7 @@ def create_buffers(obs_shape, num_actions, flags) -> Buffers:
         policy_logits=dict(size=(T + 1, num_actions), dtype=torch.float32),
         baseline=dict(size=(T + 1,), dtype=torch.float32),
         action=dict(size=(T + 1,), dtype=torch.int64),
+        acted=dict(size=(T + 1,), dtype=torch.int64),
         episode_win=dict(size=(T + 1,), dtype=torch.int32),
         carried_obj=dict(size=(T + 1,), dtype=torch.int32),
         carried_col=dict(size=(T + 1,), dtype=torch.int32),
@@ -237,6 +239,7 @@ def act(i: int, free_queue: mp.SimpleQueue, full_queue: mp.SimpleQueue,
                     train_state_count_dict.update({train_state_key: 1})
                 buffers['train_state_count'][index][t + 1, ...] = \
                     torch.tensor(1 / np.sqrt(train_state_count_dict.get(train_state_key)))
+                    #TODO Maybe modify sqrt here ============
 
                 timings.time('write')
             full_queue.put(index)

@@ -46,3 +46,5 @@ def compute_inverse_dynamics_loss(pred_actions, true_actions):
     return torch.sum(torch.mean(inverse_dynamics_loss, dim=1))
 
 
+def compute_act_distrib_loss(pred_distrib, feedback, actions):
+    raise(NotImplementedError, "#todo")

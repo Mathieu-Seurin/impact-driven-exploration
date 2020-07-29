@@ -84,6 +84,11 @@ parser.add_argument('--intrinsic_reward_coef', default=0.5, type=float,
                     Should be larger than 0.')
 parser.add_argument('--rnd_loss_coef', default=0.1, type=float,
                     help='Coefficient for the RND loss coefficient relative to the IMPALA one.')
+parser.add_argument('--act_distrib_loss_coef', default=1.0, type=float,
+                    help='Coefficient for the action distribution coefficient relative to the IMPALA one.')
+
+
+
 
 # Singleton Environments.
 parser.add_argument('--fix_seed', action='store_true',

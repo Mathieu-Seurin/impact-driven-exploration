@@ -13,6 +13,7 @@ from src.algos.rnd import train as train_rnd
 from src.algos.ride import train as train_ride
 from src.algos.no_episodic_counts import train as train_no_episodic_counts
 from src.algos.only_episodic_counts import train as train_only_episodic_counts
+from src.algos.action_shift import train as train_action_shift
 
 def main(flags):
     if flags.model == 'vanilla':
@@ -29,8 +30,10 @@ def main(flags):
         train_no_episodic_counts(flags)
     elif flags.model == 'only-episodic-counts':
         train_only_episodic_counts(flags)
+    elif flags.model == 'action_shift':
+        train_action_shift(flags)
     else:
-        raise NotImplementedError("This model has not been implemented. "\
+        raise NotImplementedError("This model has not been implemented. " \
         "The available options are: vanilla, count, curiosity, rnd, ride, \
         no-episodic-counts, and only-episodic-count.")
 

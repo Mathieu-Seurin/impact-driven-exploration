@@ -265,7 +265,6 @@ class FullObsMinigridStateEmbeddingNet(nn.Module):
 
         return core_input
 
-
 class MinigridPolicyNet(nn.Module):
     def __init__(self, observation_shape, num_actions):
         super(MinigridPolicyNet, self).__init__()
@@ -431,6 +430,70 @@ class MinigridForwardDynamicsNet(nn.Module):
         inputs = torch.cat((state_embedding, action_one_hot), dim=2)
         next_state_emb = self.fd_out(self.forward_dynamics(inputs))
         return next_state_emb
+
+
+class MinigridActionDistribution(nn.Module):
+    def __init__(self, observation_shape, num_actions):
+        #todo
+
+        super(MinigridActionDistribution, self).__init__()
+        self.num_actions = num_actions
+
+        self.observation_shape = observation_shape
+
+        self.use_index_select = True
+        self.obj_dim = 5
+        self.col_dim = 3
+        self.con_dim = 2
+        self.agent_loc_dim = 10
+        self.num_channels = (self.obj_dim + self.col_dim + self.con_dim)
+
+        self.embed_object = nn.Embedding(11, self.obj_dim)
+        self.embed_color = nn.Embedding(6, self.col_dim)
+        self.embed_contains = nn.Embedding(4, self.con_dim)
+        self.embed_agent_loc = nn.Embedding(self.observation_shape[0] * self.observation_shape[1] + 1,
+                                            self.agent_loc_dim)
+
+
+        init_ = lambda m: init(m, nn.init.orthogonal_,
+                               lambda x: nn.init.constant_(x, 0),
+                               nn.init.calculate_gain('relu'))
+
+        self.feat_extract = nn.Sequential(
+            init_(nn.Conv2d(in_channels=self.observation_shape[2], out_channels=32, kernel_size=(3, 3), stride=2,
+                            padding=1)),
+            nn.ELU(),
+            init_(nn.Conv2d(in_channels=32, out_channels=32, kernel_size=(3, 3), stride=2, padding=1)),
+            nn.ELU(),
+            init_(nn.Conv2d(in_channels=32, out_channels=32, kernel_size=(3, 3), stride=2, padding=1)),
+            nn.ELU(),
+        )
+
+        self.fc = nn.Sequential(
+            init_(nn.Linear(32, 1024)),
+            nn.ReLU(),
+            init_(nn.Linear(1024, 1024)),
+            nn.ReLU(),
+        )
+
+        self.core = nn.LSTM(1024, 1024, 2)
+
+        init_ = lambda m: init(m, nn.init.orthogonal_,
+                               lambda x: nn.init.constant_(x, 0))
+
+        self.policy = init_(nn.Linear(1024, self.num_actions))
+        self.baseline = init_(nn.Linear(1024, 1))
+
+
+
+        self.fc = nn.Sequential(
+            init_(nn.Linear(32 + self.agent_loc_dim + self.obj_dim + self.col_dim, 128)),
+            nn.ReLU(),
+            init_(nn.Linear(128, 128)),
+            nn.ReLU(),
+        )
+
+
 
 
 class MarioDoomPolicyNet(nn.Module):

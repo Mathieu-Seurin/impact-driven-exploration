@@ -4,7 +4,7 @@
 # This source code is licensed under the license found in the
 # LICENSE file in the root directory of this source tree.
 
-import gym 
+import gym
 import torch 
 from collections import deque, defaultdict
 from gym import spaces
@@ -15,6 +15,24 @@ from gym_minigrid.minigrid import OBJECT_TO_IDX, COLOR_TO_IDX
 def _format_observation(obs):
     obs = torch.tensor(obs)
     return obs.view((1, 1) + obs.shape) 
+
+
+class ActionActedWrapper(gym.Wrapper):
+    def __init__(self, env):
+        gym.Wrapper.__init__(self, env)
+        self.observation_space = env.observation_space
+        self.last_obs = None
+
+    def reset(self):
+        self.last_obs = self.env.reset()
+        action_acted = True
+        return self.last_obs, action_acted
+
+    def step(self, action):
+        frame, reward, done, info = self.env.step(action)
+        action_acted = not np.all(self.last_obs == frame)
+        self.last_obs = frame
+        return (frame, action_acted), reward, done, info
 
 
 class Minigrid2Image(gym.ObservationWrapper):
@@ -44,11 +62,14 @@ class Environment:
         self.episode_step = torch.zeros(1, 1, dtype=torch.int32)
         self.episode_win = torch.zeros(1, 1, dtype=torch.int32)
         initial_done = torch.ones(1, 1, dtype=torch.uint8)
+        initial_action_feedback = torch.ones(1, 1, dtype=torch.uint8)
+
         if self.fix_seed:
             self.gym_env.seed(seed=self.env_seed)
         initial_frame = _format_observation(self.gym_env.reset())
         partial_obs = _format_observation(self.get_partial_obs())
 
+        # todo unwrap ??
         if self.gym_env.env.env.carrying:
             carried_col, carried_obj = torch.LongTensor([[COLOR_TO_IDX[self.gym_env.env.env.carrying.color]]]), torch.LongTensor([[OBJECT_TO_IDX[self.gym_env.env.env.carrying.type]]])
         else:
@@ -63,11 +84,12 @@ class Environment:
             episode_win=self.episode_win,
             carried_col = carried_col,
             carried_obj = carried_obj, 
-            partial_obs=partial_obs
-            )
+            partial_obs=partial_obs,
+            action_feedback = initial_action_feedback,
+        )
         
     def step(self, action):
-        frame, reward, done, _ = self.gym_env.step(action.item())
+        (frame, action_acted), reward, done, _ = self.gym_env.step(action.item())
 
         self.episode_step += 1
         episode_step = self.episode_step
@@ -92,13 +114,14 @@ class Environment:
         frame = _format_observation(frame)
         reward = torch.tensor(reward).view(1, 1)
         done = torch.tensor(done).view(1, 1)
+        action_acted = torch.tensor(action_acted).view(1, 1)
+
         partial_obs = _format_observation(self.get_partial_obs())
         
         if self.gym_env.env.env.carrying:
             carried_col, carried_obj = torch.LongTensor([[COLOR_TO_IDX[self.gym_env.env.env.carrying.color]]]), torch.LongTensor([[OBJECT_TO_IDX[self.gym_env.env.env.carrying.type]]])
         else:
             carried_col, carried_obj = torch.LongTensor([[5]]), torch.LongTensor([[1]])   
-
 
         return dict(
             frame=frame,
@@ -109,7 +132,8 @@ class Environment:
             episode_win = episode_win,
             carried_col = carried_col,
             carried_obj = carried_obj, 
-            partial_obs=partial_obs
+            partial_obs=partial_obs,
+            action_acted=action_acted,
             )
 
     def get_full_obs(self):
