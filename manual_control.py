@@ -32,6 +32,7 @@ def step(action):
     obs, reward, done, info = env.step(action)
     print('step=%s, reward=%.2f' % (env.step_count, reward))
     print("Acted : ", obs[1])
+    print("Carry", env.env.carrying)
 
     if done:
         print('done!')

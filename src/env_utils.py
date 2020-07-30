@@ -62,14 +62,15 @@ class Environment:
         self.episode_step = torch.zeros(1, 1, dtype=torch.int32)
         self.episode_win = torch.zeros(1, 1, dtype=torch.int32)
         initial_done = torch.ones(1, 1, dtype=torch.uint8)
-        initial_action_feedback = torch.ones(1, 1, dtype=torch.uint8)
+        initial_action_acted = torch.ones(1, 1, dtype=torch.uint8)
 
         if self.fix_seed:
             self.gym_env.seed(seed=self.env_seed)
-        initial_frame = _format_observation(self.gym_env.reset())
+
+        observation, acted = self.gym_env.reset()
+        initial_frame = _format_observation(observation)
         partial_obs = _format_observation(self.get_partial_obs())
 
-        # todo unwrap ??
         if self.gym_env.env.env.carrying:
             carried_col, carried_obj = torch.LongTensor([[COLOR_TO_IDX[self.gym_env.env.env.carrying.color]]]), torch.LongTensor([[OBJECT_TO_IDX[self.gym_env.env.env.carrying.type]]])
         else:
@@ -85,7 +86,7 @@ class Environment:
             carried_col = carried_col,
             carried_obj = carried_obj, 
             partial_obs=partial_obs,
-            action_feedback = initial_action_feedback,
+            action_acted = initial_action_acted,
         )
         
     def step(self, action):
@@ -106,7 +107,7 @@ class Environment:
         if done:
             if self.fix_seed:
                 self.gym_env.seed(seed=self.env_seed)
-            frame = self.gym_env.reset()
+            frame, action_acted = self.gym_env.reset()
             self.episode_return = torch.zeros(1, 1)
             self.episode_step = torch.zeros(1, 1, dtype=torch.int32)
             self.episode_win = torch.zeros(1, 1, dtype=torch.int32)

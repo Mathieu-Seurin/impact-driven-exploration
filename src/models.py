@@ -434,26 +434,17 @@ class MinigridForwardDynamicsNet(nn.Module):
 
 class MinigridActionDistribution(nn.Module):
     def __init__(self, observation_shape, num_actions):
-        #todo
 
         super(MinigridActionDistribution, self).__init__()
-        self.num_actions = num_actions
 
+        self.num_actions = num_actions
         self.observation_shape = observation_shape
 
-        self.use_index_select = True
         self.obj_dim = 5
         self.col_dim = 3
-        self.con_dim = 2
-        self.agent_loc_dim = 10
-        self.num_channels = (self.obj_dim + self.col_dim + self.con_dim)
 
         self.embed_object = nn.Embedding(11, self.obj_dim)
         self.embed_color = nn.Embedding(6, self.col_dim)
-        self.embed_contains = nn.Embedding(4, self.con_dim)
-        self.embed_agent_loc = nn.Embedding(self.observation_shape[0] * self.observation_shape[1] + 1,
-                                            self.agent_loc_dim)
-
 
         init_ = lambda m: init(m, nn.init.orthogonal_,
                                lambda x: nn.init.constant_(x, 0),
@@ -469,31 +460,48 @@ class MinigridActionDistribution(nn.Module):
             nn.ELU(),
         )
 
-        self.fc = nn.Sequential(
-            init_(nn.Linear(32, 1024)),
-            nn.ReLU(),
-            init_(nn.Linear(1024, 1024)),
-            nn.ReLU(),
-        )
-
-        self.core = nn.LSTM(1024, 1024, 2)
-
-        init_ = lambda m: init(m, nn.init.orthogonal_,
-                               lambda x: nn.init.constant_(x, 0))
-
-        self.policy = init_(nn.Linear(1024, self.num_actions))
-        self.baseline = init_(nn.Linear(1024, 1))
-
-
+        init_ = lambda m: init(m, nn.init.orthogonal_, lambda x: nn.init.
+                               constant_(x, 0))
 
         self.fc = nn.Sequential(
-            init_(nn.Linear(32 + self.agent_loc_dim + self.obj_dim + self.col_dim, 128)),
+            init_(nn.Linear(32 + self.obj_dim + self.col_dim, 128)),
             nn.ReLU(),
-            init_(nn.Linear(128, 128)),
-            nn.ReLU(),
+            init_(nn.Linear(128, num_actions)),
+            nn.Tanh(),
         )
 
+    def _select(self, embed, x):
+        out = embed.weight.index_select(0, x.reshape(-1))
+        # handle reshaping x to 1-d and output back to N-d
+        return out.reshape(x.shape +(-1,))
 
+    def forward(self, frame_seq, carried_obj, carried_col):
+
+        T, B, *_ = frame_seq.shape
+
+        # -- [unroll_length*batch_size x height x width x channels]
+        x = torch.flatten(frame_seq, 0, 1)  # Merge time and batch.
+        x = x.float() / 255.0  # todo : div / 255 or not ?
+
+        carried_obj = carried_obj.long()
+        carried_col = carried_col.long()
+        carried_obj_emb = self._select(self.embed_object, carried_obj)
+        carried_col_emb = self._select(self.embed_color, carried_col)
+
+        # -- [unroll_length*batch_size x channels x width x height]
+        x = x.transpose(1, 3)
+        # -- [B x K x W x H]
+
+        carried_obj_emb = carried_obj_emb.view(T * B, -1)
+        carried_col_emb = carried_col_emb.view(T * B, -1)
+
+        x = self.feat_extract(x)
+        x = x.view(T * B, -1)
+
+        union = torch.cat([x, carried_obj_emb, carried_col_emb], dim=1)
+        action_available = self.fc(union)
+
+        return action_available.view(T, B, -1)
 
 
 class MarioDoomPolicyNet(nn.Module):

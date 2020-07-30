@@ -30,12 +30,12 @@ def main(flags):
         train_no_episodic_counts(flags)
     elif flags.model == 'only-episodic-counts':
         train_only_episodic_counts(flags)
-    elif flags.model == 'action_shift':
+    elif flags.model == 'action-shift':
         train_action_shift(flags)
     else:
         raise NotImplementedError("This model has not been implemented. " \
         "The available options are: vanilla, count, curiosity, rnd, ride, \
-        no-episodic-counts, and only-episodic-count.")
+        no-episodic-counts, and only-episodic-count.\nChosen : {}".format(flags.model))
 
 if __name__ == '__main__':
     flags = parser.parse_args()

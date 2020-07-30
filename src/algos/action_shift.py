@@ -51,15 +51,21 @@ def learn(actor_model,
                                    dtype=torch.float32).to(device=flags.device)
         count_rewards = batch['episode_state_count'][1:].float().to(device=flags.device)
 
-        # if flags.use_fullobs_intrinsic:
-        #     state_emb = state_embedding_model(batch, next_state=False) \
-        #         .reshape(flags.unroll_length, flags.batch_size, 128)
-        #     next_state_emb = state_embedding_model(batch, next_state=True) \
-        #         .reshape(flags.unroll_length, flags.batch_size, 128)
-        # else:
-        act_distrib = action_distrib_model(batch['partial_obs'][:-1].to(device=flags.device)) # check alignement
-        next_act_distrib = action_distrib_model(batch['partial_obs'][1:].to(device=flags.device))
+        if flags.use_fullobs_intrinsic:
+            frame_seq =   batch['partial_obs'][:-1].to(device=flags.device)
+            carried_obj = batch["carried_obj"][:-1].to(device=flags.device)
+            carried_col = batch["carried_col"][:-1].to(device=flags.device)
 
+            next_frame_seq =   batch['partial_obs'][1:].to(device=flags.device)
+            next_carried_obj = batch["carried_obj"][1:].to(device=flags.device)
+            next_carried_col = batch["carried_col"][1:].to(device=flags.device)
+
+            act_distrib =      action_distrib_model(frame_seq, carried_obj, carried_col)  # check alignement
+            next_act_distrib = action_distrib_model(next_frame_seq, next_carried_obj, next_carried_col)
+        else:
+            raise NotImplementedError("Full obs is needed, as the object carried is useful to compute action prediction")
+
+        # todo ceil action distrib ? To avoid early shitstorm
         control_rewards = torch.norm(next_act_distrib - act_distrib, dim=2, p=2)
 
         intrinsic_rewards = count_rewards * control_rewards
@@ -67,8 +73,12 @@ def learn(actor_model,
         intrinsic_reward_coef = flags.intrinsic_reward_coef
         intrinsic_rewards *= intrinsic_reward_coef
 
+        actions = batch['action'][:-1].to(device=flags.device)
+        actions_acted = batch['action_acted'][1:].to(device=flags.device)
+
+        # todo : gridsearch on coef
         act_distrib_loss = flags.act_distrib_loss_coef * \
-                           losses.compute_act_distrib_loss(next_act_distrib, batch['feedback'], batch['action']) # check coef
+                           losses.compute_act_distrib_loss(act_distrib, actions_acted, actions)
 
         learner_outputs, unused_state = model(batch, initial_agent_state)
 
@@ -168,11 +178,11 @@ def train(flags):
         else:
             model = MinigridPolicyNet(env.observation_space.shape, env.action_space.n)
         if flags.use_fullobs_intrinsic:
-            action_distrib_model = FullObsMinigridActionDistributionNet(env.observation_space.shape) \
+            action_distribution_model = MinigridActionDistributionNet(env.observation_space.shape, env.action_space.n) \
                 .to(device=flags.device)
         else:
-            action_distribution_model = MinigridActionDistributionNet(env.observation_space.shape) \
-                .to(device=flags.device)
+            raise NotImplementedError("ATM Action shift requires full obs (specially carrying info")
+
     else:
         model = MarioDoomPolicyNet(env.observation_space.shape, env.action_space.n)
         action_distribution_model = MarioDoomStateActionDistribNet(env.observation_space.shape) \

@@ -46,5 +46,15 @@ def compute_inverse_dynamics_loss(pred_actions, true_actions):
     return torch.sum(torch.mean(inverse_dynamics_loss, dim=1))
 
 
-def compute_act_distrib_loss(pred_distrib, feedback, actions):
-    raise(NotImplementedError, "#todo")
+def compute_act_distrib_loss(pred_distrib, actions_acted, actions):
+    pred_distrib = pred_distrib.flatten(0, 1)
+    actions = actions.view(-1, 1)
+    actions_acted = actions_acted.flatten()
+
+    # Retrieve output only for actions that were taken by the agent, don't optimize for the other actions
+    available = pred_distrib.gather(index=actions, dim=1).flatten()
+
+    assert available.requires_grad is True
+    assert actions_acted.requires_grad is False
+
+    return F.mse_loss(available, actions_acted)

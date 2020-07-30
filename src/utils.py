@@ -126,7 +126,7 @@ def create_buffers(obs_shape, num_actions, flags) -> Buffers:
         policy_logits=dict(size=(T + 1, num_actions), dtype=torch.float32),
         baseline=dict(size=(T + 1,), dtype=torch.float32),
         action=dict(size=(T + 1,), dtype=torch.int64),
-        acted=dict(size=(T + 1,), dtype=torch.int64),
+        action_acted=dict(size=(T + 1,), dtype=torch.int64),
         episode_win=dict(size=(T + 1,), dtype=torch.int32),
         carried_obj=dict(size=(T + 1,), dtype=torch.int32),
         carried_col=dict(size=(T + 1,), dtype=torch.int32),
