@@ -83,10 +83,10 @@ class Environment:
             episode_return=self.episode_return,
             episode_step=self.episode_step,
             episode_win=self.episode_win,
-            carried_col = carried_col,
-            carried_obj = carried_obj, 
+            carried_col=carried_col,
+            carried_obj=carried_obj,
             partial_obs=partial_obs,
-            action_acted = initial_action_acted,
+            action_acted=initial_action_acted,
         )
         
     def step(self, action):

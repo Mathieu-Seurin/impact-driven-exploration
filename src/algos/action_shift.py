@@ -36,11 +36,11 @@ FullObsMinigridPolicyNet = models.FullObsMinigridPolicyNet
 
 def learn(actor_model,
           model,
-          action_distrib_model,
+          action_hist,
           batch,
           initial_agent_state,
           optimizer,
-          action_distribution_optimizer,
+          # action_distribution_optimizer,
           scheduler,
           flags,
           frames=None,
@@ -51,34 +51,48 @@ def learn(actor_model,
                                    dtype=torch.float32).to(device=flags.device)
         count_rewards = batch['episode_state_count'][1:].float().to(device=flags.device)
 
-        if flags.use_fullobs_intrinsic:
-            frame_seq =   batch['partial_obs'][:-1].to(device=flags.device)
-            carried_obj = batch["carried_obj"][:-1].to(device=flags.device)
-            carried_col = batch["carried_col"][:-1].to(device=flags.device)
+        # if flags.use_fullobs_intrinsic:
+        #     frame_seq =   batch['partial_obs'][:-1].to(device=flags.device)
+        #     carried_obj = batch["carried_obj"][:-1].to(device=flags.device)
+        #     carried_col = batch["carried_col"][:-1].to(device=flags.device)
+        #
+        #     next_frame_seq =   batch['partial_obs'][1:].to(device=flags.device)
+        #     next_carried_obj = batch["carried_obj"][1:].to(device=flags.device)
+        #     next_carried_col = batch["carried_col"][1:].to(device=flags.device)
+        #
+        #     act_distrib =      action_distrib_model(frame_seq, carried_obj, carried_col)  # check alignement
+        #     next_act_distrib = action_distrib_model(next_frame_seq, next_carried_obj, next_carried_col)
+        # else:
+        #     raise NotImplementedError("Full obs is needed, as the object carried is useful to compute action prediction")
 
-            next_frame_seq =   batch['partial_obs'][1:].to(device=flags.device)
-            next_carried_obj = batch["carried_obj"][1:].to(device=flags.device)
-            next_carried_col = batch["carried_col"][1:].to(device=flags.device)
+        action_id, count_action = torch.unique(batch["action"].flatten(), return_counts=True)
+        action_hist["usage"][action_id] += count_action.cpu()
 
-            act_distrib =      action_distrib_model(frame_seq, carried_obj, carried_col)  # check alignement
-            next_act_distrib = action_distrib_model(next_frame_seq, next_carried_obj, next_carried_col)
-        else:
-            raise NotImplementedError("Full obs is needed, as the object carried is useful to compute action prediction")
+        acted_id, action_acted = torch.unique((batch["action"] + 1) * batch["action_acted"] - 1, return_counts=True)
+        action_hist["acted"][acted_id[1:]] += action_acted[1:].cpu()
 
-        # todo ceil action distrib ? To avoid early shitstorm
-        control_rewards = torch.norm(next_act_distrib - act_distrib, dim=2, p=2)
+        # action_hist["acted"][:len(action_acted[1:])] += action_acted[1:].cpu()
 
-        intrinsic_rewards = count_rewards * control_rewards
+        action_rewards = torch.zeros_like(batch["action"]).float()
+        reward_for_an_action = 1 - (action_hist["acted"].float() / action_hist["usage"].float())
+
+        reward_for_an_action[torch.isnan(reward_for_an_action)] = 0
+        assert torch.all(reward_for_an_action >= 0), "Problem, reward should only be positive"
+
+        for id in action_id:
+            action_rewards[(batch["action"]==id.item()) & batch["action_acted"].byte()] = reward_for_an_action[id]
+
+        # control_rewards = torch.norm(next_act_distrib - act_distrib, dim=2, p=2)
+
+        intrinsic_rewards = count_rewards * action_rewards[:-1]
 
         intrinsic_reward_coef = flags.intrinsic_reward_coef
         intrinsic_rewards *= intrinsic_reward_coef
 
-        actions = batch['action'][:-1].to(device=flags.device)
-        actions_acted = batch['action_acted'][1:].to(device=flags.device)
-
-        # todo : gridsearch on coef
-        act_distrib_loss = flags.act_distrib_loss_coef * \
-                           losses.compute_act_distrib_loss(act_distrib, actions_acted, actions)
+        # actions = batch['action'][:-1].to(device=flags.device)
+        # actions_acted = batch['action_acted'][1:].to(device=flags.device)
+        # act_distrib_loss = flags.act_distrib_loss_coef * \
+        #                    losses.compute_act_distrib_loss(act_distrib, actions_acted, actions)
 
         learner_outputs, unused_state = model(batch, initial_agent_state)
 
@@ -116,7 +130,7 @@ def learn(actor_model,
         entropy_loss = flags.entropy_cost * losses.compute_entropy_loss(
             learner_outputs['policy_logits'])
 
-        total_loss = pg_loss + baseline_loss + entropy_loss + act_distrib_loss
+        total_loss = pg_loss + baseline_loss + entropy_loss #+ act_distrib_loss
 
         episode_returns = batch['episode_return'][batch['done']]
         stats = {
@@ -125,22 +139,22 @@ def learn(actor_model,
             'pg_loss': pg_loss.item(),
             'baseline_loss': baseline_loss.item(),
             'entropy_loss': entropy_loss.item(),
-            'act_distrib_loss': act_distrib_loss.item(),
+            # 'act_distrib_loss': act_distrib_loss.item(),
             'mean_rewards': torch.mean(rewards).item(),
             'mean_intrinsic_rewards': torch.mean(intrinsic_rewards).item(),
             'mean_total_rewards': torch.mean(total_rewards).item(),
-            'mean_control_rewards': torch.mean(control_rewards).item(),
+            'mean_action_rewards': torch.mean(action_rewards).item(),
             'mean_count_rewards': torch.mean(count_rewards).item(),
         }
 
         scheduler.step()
         optimizer.zero_grad()
-        action_distribution_optimizer.zero_grad()
+        # action_distribution_optimizer.zero_grad()
         total_loss.backward()
         nn.utils.clip_grad_norm_(model.parameters(), flags.max_grad_norm)
-        nn.utils.clip_grad_norm_(action_distrib_model.parameters(), flags.max_grad_norm)
+        # nn.utils.clip_grad_norm_(action_distrib_model.parameters(), flags.max_grad_norm)
         optimizer.step()
-        action_distribution_optimizer.step()
+        # action_distribution_optimizer.step()
 
         actor_model.load_state_dict(model.state_dict())
         return stats
@@ -177,11 +191,13 @@ def train(flags):
             model = FullObsMinigridPolicyNet(env.observation_space.shape, env.action_space.n)
         else:
             model = MinigridPolicyNet(env.observation_space.shape, env.action_space.n)
-        if flags.use_fullobs_intrinsic:
-            action_distribution_model = MinigridActionDistributionNet(env.observation_space.shape, env.action_space.n) \
-                .to(device=flags.device)
-        else:
-            raise NotImplementedError("ATM Action shift requires full obs (specially carrying info")
+
+        action_hist = dict([('usage', torch.zeros(env.action_space.n).long()),('acted', torch.zeros(env.action_space.n).long())])
+        # if flags.use_fullobs_intrinsic:
+        #     action_distribution_model = MinigridActionDistributionNet(env.observation_space.shape, env.action_space.n) \
+        #         .to(device=flags.device)
+        # else:
+        #     raise NotImplementedError("ATM Action shift requires full obs (specially carrying info")
 
     else:
         model = MarioDoomPolicyNet(env.observation_space.shape, env.action_space.n)
@@ -233,12 +249,12 @@ def train(flags):
         eps=flags.epsilon,
         alpha=flags.alpha)
 
-    action_distribution_optimizer = torch.optim.RMSprop(
-        action_distribution_model.parameters(),
-        lr=flags.learning_rate,
-        momentum=flags.momentum,
-        eps=flags.epsilon,
-        alpha=flags.alpha)
+    # action_distribution_optimizer = torch.optim.RMSprop(
+    #     action_distribution_model.parameters(),
+    #     lr=flags.learning_rate,
+    #     momentum=flags.momentum,
+    #     eps=flags.epsilon,
+    #     alpha=flags.alpha)
 
     def lr_lambda(epoch):
         return 1 - min(epoch * T * B, flags.total_frames) / flags.total_frames
@@ -255,9 +271,9 @@ def train(flags):
         'mean_rewards',
         'mean_intrinsic_rewards',
         'mean_total_rewards',
-        'mean_control_rewards',
+        'mean_action_rewards',
         'mean_count_rewards',
-        'action_distribution_loss',
+        # 'action_distribution_loss',
     ]
     logger.info('# Step\t%s', '\t'.join(stat_keys))
     frames, stats = 0, {}
@@ -270,8 +286,16 @@ def train(flags):
             timings.reset()
             batch, agent_state = get_batch(free_queue, full_queue, buffers,
                                            initial_agent_state_buffers, flags, timings)
-            stats = learn(model, learner_model, action_distribution_model, batch, agent_state, optimizer,
-                          action_distribution_optimizer, scheduler, flags, frames=frames)
+            stats = learn(actor_model=model,
+                          model=learner_model,
+                          action_hist=action_hist,
+                          batch=batch,
+                          initial_agent_state=agent_state,
+                          optimizer=optimizer, #action_distribution_optimizer,
+                          scheduler=scheduler,
+                          flags=flags,
+                          frames=frames)
+
             timings.time('learn')
             with lock:
                 to_log = dict(frames=frames)
@@ -301,11 +325,12 @@ def train(flags):
         log.info('Saving checkpoint to %s', checkpointpath)
         torch.save({
             'model_state_dict': model.state_dict(),
-            'action_distribution_model_state_dict': action_distribution_model.state_dict(),
             'optimizer_state_dict': optimizer.state_dict(),
-            'action_distribution_optimizer_state_dict': action_distribution_optimizer.state_dict(),
             'scheduler_state_dict': scheduler.state_dict(),
+            'action_hist': action_hist,
             'flags': vars(flags),
+            # 'action_distribution_optimizer_state_dict': action_distribution_optimizer.state_dict(),
+            # 'action_distribution_model_state_dict': action_distribution_model.state_dict(),
         }, checkpointpath)
 
     timer = timeit.default_timer
