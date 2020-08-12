@@ -72,13 +72,13 @@ class FileWriter:
         self.metadata['xpid'] = self.xpid
 
         formatter = logging.Formatter('%(message)s')
-        self._logger = logging.getLogger('palaas/out')
+        self._logger = logging.getLogger('torchbeast')
 
-        # to stdout handler
-        shandle = logging.StreamHandler()
-        shandle.setFormatter(formatter)
-        self._logger.addHandler(shandle)
-        self._logger.setLevel(logging.INFO)
+        # # to stdout handler
+        # shandle = logging.StreamHandler()
+        # shandle.setFormatter(formatter)
+        # self._logger.addHandler(shandle)
+        # self._logger.setLevel(logging.INFO)
 
         rootdir = os.path.expandvars(os.path.expanduser(rootdir))
         # to file handler
@@ -121,6 +121,7 @@ class FileWriter:
 
         fhandle = logging.FileHandler(self.paths['msg'])
         fhandle.setFormatter(formatter)
+        fhandle.setLevel(logging.ERROR)
         self._logger.addHandler(fhandle)
 
         self._logger.info('Saving logs data to %s', self.paths['logs'])

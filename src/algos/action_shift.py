@@ -339,6 +339,23 @@ def train(flags):
     try:
         last_checkpoint_time = timer()
         while frames < flags.total_frames:
+
+            add_actor = []
+            for actor_num, actor in enumerate(actor_processes):
+                if not actor.is_alive():
+
+                    actor.terminate()
+                    new_actor = ctx.Process(
+                        target=act,
+                        args=(actor_num, free_queue, full_queue, model, buffers,
+                              episode_state_count_dict, train_state_count_dict,
+                              initial_agent_state_buffers, flags))
+                    new_actor.start()
+                    add_actor.append([actor_num, new_actor])
+
+            for num, actor in add_actor:
+                actor_processes[num] = actor
+
             start_frames = frames
             start_time = timer()
             time.sleep(5)

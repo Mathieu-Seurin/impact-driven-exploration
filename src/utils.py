@@ -42,7 +42,7 @@ COMPLETE_MOVEMENT = [
     ['A'],
     ['B'],
     ['A', 'B'],
-] 
+]
 
 shandle = logging.StreamHandler()
 shandle.setFormatter(
@@ -148,7 +148,7 @@ def act(i: int, free_queue: mp.SimpleQueue, full_queue: mp.SimpleQueue,
         initial_agent_state_buffers, flags):
     try:
         log.info('Actor %i started.', i)
-        timings = prof.Timings()  
+        timings = prof.Timings()
 
         gym_env = create_env(flags)
         seed = i ^ int.from_bytes(os.urandom(4), byteorder='little')
@@ -163,7 +163,12 @@ def act(i: int, free_queue: mp.SimpleQueue, full_queue: mp.SimpleQueue,
         agent_state = model.initial_state(batch_size=1)
         agent_output, unused_state = model(env_output, agent_state)
 
+        # counter_lol = 0
         while True:
+            # counter_lol += 1
+            # if counter_lol > 30:
+            #     raise NotImplementedError("I'm dead bouhouh")
+
             index = free_queue.get()
             if index is None:
                 break
@@ -251,8 +256,8 @@ def act(i: int, free_queue: mp.SimpleQueue, full_queue: mp.SimpleQueue,
     except KeyboardInterrupt:
         pass  
     except Exception as e:
-        logging.error('Exception in worker process %i', i)
-        traceback.print_exc()
+        log.error('Exception in worker process %i', i)
+        log.error(traceback.format_exc())
         print()
         raise e
 

@@ -32,7 +32,7 @@ parser.add_argument('--disable_checkpoint', action='store_true',
                     help='Disable saving checkpoint.')
 parser.add_argument('--savedir', default='../',
                     help='Root dir where experiment data will be saved.')
-parser.add_argument('--num_actors', default=40, type=int, metavar='N',
+parser.add_argument('--num_actors', default=44, type=int, metavar='N',
                     help='Number of actors.')
 parser.add_argument('--total_frames', default=10000000, type=int, metavar='T',
                     help='Total environment frames to train for.')
@@ -84,7 +84,7 @@ parser.add_argument('--intrinsic_reward_coef', default=0.5, type=float,
                     Should be larger than 0.')
 parser.add_argument('--rnd_loss_coef', default=0.1, type=float,
                     help='Coefficient for the RND loss coefficient relative to the IMPALA one.')
-parser.add_argument('--action_dist_decay_coef', default=3, type=float,
+parser.add_argument('--action_dist_decay_coef', default=4, type=float,
                     help="Action Distribution ratio scaler")
 
 
