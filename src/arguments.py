@@ -34,7 +34,7 @@ parser.add_argument('--savedir', default='../',
                     help='Root dir where experiment data will be saved.')
 parser.add_argument('--num_actors', default=40, type=int, metavar='N',
                     help='Number of actors.')
-parser.add_argument('--total_frames', default=100000000, type=int, metavar='T',
+parser.add_argument('--total_frames', default=10000000, type=int, metavar='T',
                     help='Total environment frames to train for.')
 parser.add_argument('--batch_size', default=32, type=int, metavar='B',
                     help='Learner batch size.')
@@ -84,10 +84,8 @@ parser.add_argument('--intrinsic_reward_coef', default=0.5, type=float,
                     Should be larger than 0.')
 parser.add_argument('--rnd_loss_coef', default=0.1, type=float,
                     help='Coefficient for the RND loss coefficient relative to the IMPALA one.')
-parser.add_argument('--act_distrib_loss_coef', default=1.0, type=float,
-                    help='Coefficient for the action distribution coefficient relative to the IMPALA one.')
-
-
+parser.add_argument('--action_dist_decay_coef', default=3, type=float,
+                    help="Action Distribution ratio scaler")
 
 
 # Singleton Environments.

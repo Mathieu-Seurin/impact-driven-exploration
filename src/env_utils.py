@@ -11,6 +11,9 @@ from gym import spaces
 import numpy as np
 from gym_minigrid.minigrid import OBJECT_TO_IDX, COLOR_TO_IDX
 
+from gym_minigrid.envs import MultiRoomEnv
+from gym_minigrid.register import register
+
 
 def _format_observation(obs):
     obs = torch.tensor(obs)
@@ -29,6 +32,7 @@ class ActionActedWrapper(gym.Wrapper):
         return self.last_obs, action_acted
 
     def step(self, action):
+        # todo : si jamais la pièce est super grande, avancer "ne fait rien"
         frame, reward, done, info = self.env.step(action)
         action_acted = not np.all(self.last_obs == frame)
         self.last_obs = frame
@@ -214,3 +218,29 @@ class LazyFrames(object):
         return self._force()[i]
 
 
+class MultiRoomEnvN7S4(MultiRoomEnv):
+    def __init__(self):
+        super().__init__(
+            minNumRooms=7,
+            maxNumRooms=7,
+            maxRoomSize=4
+        )
+
+
+class MultiRoomEnvN10S10(MultiRoomEnv):
+    def __init__(self):
+        super().__init__(
+            minNumRooms=10,
+            maxNumRooms=10,
+            maxRoomSize=10
+        )
+
+register(
+    id='MiniGrid-MultiRoom-N7-S4-v0',
+    entry_point='src.env_utils:MultiRoomEnvN7S4'
+)
+
+register(
+    id='MiniGrid-MultiRoom-N10-S10-v0',
+    entry_point='src.env_utils:MultiRoomEnvN10S10'
+)

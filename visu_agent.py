@@ -36,10 +36,10 @@ else:
 saved_checkpoint_path = path.join(args.expe_path, "model.tar")
 checkpoint = torch.load(saved_checkpoint_path, map_location=torch.device('cpu'))
 
-model.load_state_dict(checkpoint['model_state_dict'])
-
 if 'action_hist' in checkpoint:
-    action_hist = checkpoint["action_hist"]
+    print(checkpoint["action_hist"])
+
+model.load_state_dict(checkpoint['model_state_dict'])
 
 env = Environment(env)
 env_output = env.initial()
@@ -62,5 +62,5 @@ while True :
 
     if not args.stop_visu:
         w.show_img(env.gym_env.render('rgb_array'))
-        time.sleep(1)
+        #time.sleep(1)
 

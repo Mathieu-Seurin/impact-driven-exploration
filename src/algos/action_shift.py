@@ -74,7 +74,9 @@ def learn(actor_model,
         # action_hist["acted"][:len(action_acted[1:])] += action_acted[1:].cpu()
 
         action_rewards = torch.zeros_like(batch["action"]).float()
-        reward_for_an_action = 1 - (action_hist["acted"].float() / action_hist["usage"].float())
+        acted_ratio = action_hist["acted"].float() / action_hist["usage"].float()
+        reward_for_an_action = torch.exp(- acted_ratio * flags.action_dist_decay_coef)
+        reward_for_an_action[acted_ratio == 1] = 0
 
         reward_for_an_action[torch.isnan(reward_for_an_action)] = 0
         assert torch.all(reward_for_an_action >= 0), "Problem, reward should only be positive"

@@ -49,6 +49,7 @@ shandle.setFormatter(
     logging.Formatter(
         '[%(levelname)s:%(process)d %(module)s:%(lineno)d %(asctime)s] '
         '%(message)s'))
+
 log = logging.getLogger('torchbeast')
 log.propagate = False
 log.addHandler(shandle)
