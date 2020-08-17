@@ -26,6 +26,8 @@ from gym_super_mario_bros.actions import COMPLEX_MOVEMENT
 
 import vizdoomgym
 
+from pympler import tracker
+
 
 COMPLETE_MOVEMENT = [
     ['NOOP'],
@@ -158,16 +160,21 @@ def act(i: int, free_queue: mp.SimpleQueue, full_queue: mp.SimpleQueue,
             gym_env = FrameStack(gym_env, flags.num_input_frames)  
 
         env = Environment(gym_env, fix_seed=flags.fix_seed, env_seed=flags.env_seed)
+        #memory_tracker = tracker.SummaryTracker()
 
         env_output = env.initial()
         agent_state = model.initial_state(batch_size=1)
         agent_output, unused_state = model(env_output, agent_state)
 
-        # counter_lol = 0
+        counter_usage = 0 # Workers has memory leak, count usage and delete when memory usage is too high
         while True:
-            # counter_lol += 1
-            # if counter_lol > 30:
-            #     raise NotImplementedError("I'm dead bouhouh")
+            counter_usage += 1
+            #print(counter_usage)
+            if counter_usage > flags.agent_usage:
+                log.info("=====================\n" +
+                         "Worker has been used enough time, killing to lower memory usage and garbage collect" +
+                         "\n===================")
+                return
 
             index = free_queue.get()
             if index is None:

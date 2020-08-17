@@ -4,6 +4,10 @@ import threading
 import time
 import timeit
 import pprint
+import traceback
+
+from pympler import tracker, muppy
+import pandas as pd
 
 import numpy as np
 
@@ -80,6 +84,16 @@ def learn(actor_model,
 
         reward_for_an_action[torch.isnan(reward_for_an_action)] = 0
         assert torch.all(reward_for_an_action >= 0), "Problem, reward should only be positive"
+
+        # needed_obj_count = 0
+        # for obj in gc.get_objects():
+        #     try:
+        #         if torch.is_tensor(obj) or (hasattr(obj, 'data') and torch.is_tensor(obj.data)):
+        #             needed_obj_count += 1
+        #     except:
+        #         pass
+        #
+        # print(needed_obj_count)
 
         for id in action_id:
             action_rewards[(batch["action"]==id.item()) & batch["action_acted"].byte()] = reward_for_an_action[id]
@@ -172,6 +186,8 @@ def train(flags):
     )
     checkpointpath = os.path.expandvars(os.path.expanduser(
         '%s/%s/%s' % (flags.savedir, flags.xpid, 'model.tar')))
+
+    memory_tracker = tracker.SummaryTracker()
 
     T = flags.unroll_length
     B = flags.batch_size
@@ -343,7 +359,6 @@ def train(flags):
             add_actor = []
             for actor_num, actor in enumerate(actor_processes):
                 if not actor.is_alive():
-
                     actor.terminate()
                     new_actor = ctx.Process(
                         target=act,
@@ -375,8 +390,18 @@ def train(flags):
                      frames, total_loss, fps, mean_return,
                      pprint.pformat(stats))
 
+            #memory_tracker.print_diff()
+            # memory = pd.DataFrame(mem.create_summary(), columns=['object', 'number_of_objects', 'memory'])
+            # memory['mem_per_object'] = memory['memory'] / memory['number_of_objects']
+            # log.info("\n" + str(memory.sort_values('memory', ascending=False).head(10)))
+            # log.info("\n" + str(memory.sort_values('mem_per_object', ascending=False).head(10)))
+
     except KeyboardInterrupt:
         return
+    except Exception as e:
+        log.error('Exception in main process')
+        log.error(traceback.format_exc())
+        raise e
     else:
         for thread in threads:
             thread.join()

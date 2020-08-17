@@ -10,6 +10,7 @@ import threading
 import time
 import timeit
 import pprint
+import traceback
 
 import numpy as np
 
@@ -401,7 +402,12 @@ def train(flags):
                          pprint.pformat(stats))
 
     except KeyboardInterrupt:
-        return  
+        return
+    except Exception as e:
+        log.error('Exception in main process')
+        log.error(traceback.format_exc())
+        print()
+        raise e
     else:
         for thread in threads:
             thread.join()

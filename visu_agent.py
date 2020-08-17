@@ -36,6 +36,7 @@ else:
 saved_checkpoint_path = path.join(args.expe_path, "model.tar")
 checkpoint = torch.load(saved_checkpoint_path, map_location=torch.device('cpu'))
 
+print(checkpoint['flags'])
 if 'action_hist' in checkpoint:
     print(checkpoint["action_hist"])
 
@@ -47,7 +48,7 @@ agent_state = model.initial_state(batch_size=1)
 
 if not args.stop_visu:
     from gym_minigrid.window import Window
-    w = Window('Torch Beast Agent Visualization')
+    w = Window(checkpoint['flags']['model'])
     arr = env.gym_env.render('rgb_array')
     w.show_img(arr)
 
