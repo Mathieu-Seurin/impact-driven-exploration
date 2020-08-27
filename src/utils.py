@@ -15,7 +15,7 @@ import os
 import numpy as np
 
 from src.core import prof
-from src.env_utils import FrameStack, Environment, Minigrid2Image, ActionActedWrapper
+from src.env_utils import FrameStack, Environment, OldEnvironment, VizdoomSparseWrapper, Minigrid2Image, ActionActedWrapper
 from src import atari_wrappers as atari_wrappers
 
 from gym_minigrid import wrappers as wrappers
@@ -25,9 +25,6 @@ from nes_py.wrappers import JoypadSpace
 from gym_super_mario_bros.actions import COMPLEX_MOVEMENT
 
 import vizdoomgym
-
-from pympler import tracker
-
 
 COMPLETE_MOVEMENT = [
     ['NOOP'],
@@ -82,7 +79,7 @@ def create_env(flags):
                 frame_stack=True,
                 scale=False,
                 fire=False)) 
-        return env
+        return ActionActedWrapper(VizdoomSparseWrapper(env))
 
 
 def get_batch(free_queue: mp.SimpleQueue,
@@ -159,7 +156,7 @@ def act(i: int, free_queue: mp.SimpleQueue, full_queue: mp.SimpleQueue,
         if flags.num_input_frames > 1:
             gym_env = FrameStack(gym_env, flags.num_input_frames)  
 
-        env = Environment(gym_env, fix_seed=flags.fix_seed, env_seed=flags.env_seed)
+        env = OldEnvironment(gym_env, fix_seed=flags.fix_seed, env_seed=flags.env_seed)
         #memory_tracker = tracker.SummaryTracker()
 
         env_output = env.initial()
@@ -170,7 +167,7 @@ def act(i: int, free_queue: mp.SimpleQueue, full_queue: mp.SimpleQueue,
         while True:
             counter_usage += 1
             #print(counter_usage)
-            if counter_usage > flags.agent_usage:
+            if counter_usage > flags.actor_usage:
                 log.info("=====================\n" +
                          "Worker has been used enough time, killing to lower memory usage and garbage collect" +
                          "\n===================")

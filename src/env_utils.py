@@ -20,6 +20,34 @@ def _format_observation(obs):
     return obs.view((1, 1) + obs.shape) 
 
 
+class VizdoomSparseWrapper(gym.Wrapper):
+    def __init__(self, env):
+        gym.Wrapper.__init__(self, env)
+        self.observation_space = env.observation_space
+        self.last_obs = None
+
+    def reset(self):
+        return self.env.reset()
+
+    def step(self, action):
+        frame, reward, done, info = self.env.step(action)
+
+        info["old_reward"] = reward
+
+        if done:
+            if self.unwrapped.game.is_player_dead() or self.unwrapped.game.get_episode_time() >= self.unwrapped.game.get_episode_timeout():
+                #print("death or timeout  ", reward)
+                reward = 0
+            else:
+                #assert reward > 900
+                #print("victory  ", reward)
+                reward = 1
+        else:
+            reward = 0
+
+        return frame, reward, done, info
+
+
 class ActionActedWrapper(gym.Wrapper):
     def __init__(self, env):
         gym.Wrapper.__init__(self, env)
@@ -27,15 +55,26 @@ class ActionActedWrapper(gym.Wrapper):
         self.last_obs = None
 
     def reset(self):
-        self.last_obs = self.env.reset()
+        frame = self.env.reset()
+
+        if frame.shape[0] == 4: # Vizdoom and frame stacking
+            self.last_obs = frame[-1]
+        else:
+            self.last_obs = frame
+
         action_acted = True
-        return self.last_obs, action_acted
+        return frame, action_acted
 
     def step(self, action):
-        # todo : si jamais la pièce est super grande, avancer "ne fait rien"
         frame, reward, done, info = self.env.step(action)
-        action_acted = not np.all(self.last_obs == frame)
-        self.last_obs = frame
+
+        if frame.shape[0] == 4: # Vizdoom and Frame stacking
+            action_acted = not np.all(self.last_obs == frame[-1])
+            self.last_obs = frame[-1]
+        else:
+            action_acted = not np.all(self.last_obs == frame)
+            self.last_obs = frame
+
         return (frame, action_acted), reward, done, info
 
 
@@ -154,6 +193,76 @@ class Environment:
     def close(self):
         self.gym_env.close()
 
+
+class OldEnvironment:
+    def __init__(self, gym_env, fix_seed=False, env_seed=1):
+        self.gym_env = gym_env
+        self.episode_return = None
+        self.episode_step = None
+        self.fix_seed = fix_seed
+        self.env_seed = env_seed
+
+    def get_partial_obs(self):
+        if hasattr(self.gym_env.unwrapped, "gen_obs"):
+            return _format_observation(self.gym_env.env.env.gen_obs()['image'])
+        else:
+            return torch.zeros(1, 1)
+
+    def initial(self):
+        initial_reward = torch.zeros(1, 1)
+        self.episode_return = torch.zeros(1, 1)
+        self.episode_step = torch.zeros(1, 1, dtype=torch.int32)
+        initial_done = torch.ones(1, 1, dtype=torch.uint8)
+        action_acted = torch.zeros(1, 1)
+
+        if self.fix_seed:
+            self.gym_env.seed(seed=self.env_seed)
+
+        frame, acted = self.gym_env.reset()
+        initial_frame = _format_observation(frame)
+
+        return dict(
+            frame=initial_frame,
+            partial_obs=self.get_partial_obs(),
+            reward=initial_reward,
+            done=initial_done,
+            episode_return=self.episode_return,
+            episode_step=self.episode_step,
+            action_acted=action_acted,
+        )
+
+    def step(self, action):
+        (frame, acted), reward, done, _ = self.gym_env.step(action.item())
+
+        self.episode_step += 1
+        episode_step = self.episode_step
+
+        self.episode_return += reward
+        episode_return = self.episode_return
+
+        if done:
+            if self.fix_seed:
+                self.gym_env.seed(seed=self.env_seed)
+            frame, acted = self.gym_env.reset()
+            self.episode_return = torch.zeros(1, 1)
+            self.episode_step = torch.zeros(1, 1, dtype=torch.int32)
+
+        frame = _format_observation(frame)
+        reward = torch.tensor(reward).view(1, 1)
+        done = torch.tensor(done).view(1, 1)
+
+        return dict(
+            frame=frame,
+            partial_obs=self.get_partial_obs(),
+            reward=reward,
+            done=done,
+            episode_return=episode_return,
+            episode_step=episode_step,
+            action_acted=acted,
+        )
+
+    def close(self):
+        self.gym_env.close()
 
 class FrameStack(gym.Wrapper):
     def __init__(self, env, k):

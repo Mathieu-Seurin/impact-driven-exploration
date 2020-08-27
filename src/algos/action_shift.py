@@ -6,9 +6,6 @@ import timeit
 import pprint
 import traceback
 
-from pympler import tracker, muppy
-import pandas as pd
-
 import numpy as np
 
 import torch
@@ -79,7 +76,11 @@ def learn(actor_model,
 
         action_rewards = torch.zeros_like(batch["action"]).float()
         acted_ratio = action_hist["acted"].float() / action_hist["usage"].float()
-        reward_for_an_action = torch.exp(- acted_ratio * flags.action_dist_decay_coef)
+
+        if flags.action_dist_decay_coef == 0:
+            reward_for_an_action = 1 - acted_ratio
+        else:
+            reward_for_an_action = torch.exp(- acted_ratio * flags.action_dist_decay_coef)
         reward_for_an_action[acted_ratio == 1] = 0
 
         reward_for_an_action[torch.isnan(reward_for_an_action)] = 0
@@ -187,8 +188,6 @@ def train(flags):
     checkpointpath = os.path.expandvars(os.path.expanduser(
         '%s/%s/%s' % (flags.savedir, flags.xpid, 'model.tar')))
 
-    memory_tracker = tracker.SummaryTracker()
-
     T = flags.unroll_length
     B = flags.batch_size
 
@@ -210,7 +209,6 @@ def train(flags):
         else:
             model = MinigridPolicyNet(env.observation_space.shape, env.action_space.n)
 
-        action_hist = dict([('usage', torch.zeros(env.action_space.n).long()),('acted', torch.zeros(env.action_space.n).long())])
         # if flags.use_fullobs_intrinsic:
         #     action_distribution_model = MinigridActionDistributionNet(env.observation_space.shape, env.action_space.n) \
         #         .to(device=flags.device)
@@ -219,9 +217,10 @@ def train(flags):
 
     else:
         model = MarioDoomPolicyNet(env.observation_space.shape, env.action_space.n)
-        action_distribution_model = MarioDoomStateActionDistribNet(env.observation_space.shape) \
-            .to(device=flags.device)
+        # action_distribution_model = MarioDoomStateActionDistribNet(env.observation_space.shape) \
+        #     .to(device=flags.device)
 
+    action_hist = dict([('usage', torch.zeros(env.action_space.n).long()),('acted', torch.zeros(env.action_space.n).long())])
     buffers = create_buffers(env.observation_space.shape, model.num_actions, flags)
 
     model.share_memory()

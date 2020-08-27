@@ -8,11 +8,13 @@ import gym_minigrid
 from gym_minigrid.wrappers import *
 from gym_minigrid.window import Window
 
+import vizdoomgym
+
 from src.env_utils import ActionActedWrapper, Minigrid2Image
 
 def redraw(img):
     if not args.agent_view:
-        img = env.render('rgb_array', tile_size=args.tile_size)
+        img = env.render('rgb_array')#, tile_size=args.tile_size)
 
     window.show_img(img)
 
@@ -20,25 +22,26 @@ def reset():
     if args.seed != -1:
         env.seed(args.seed)
 
-    obs = env.reset()
+    obs, acted = env.reset()
 
     if hasattr(env, 'mission'):
         print('Mission: %s' % env.mission)
         window.set_caption(env.mission)
 
+    obs = obs.type(np.float)
     redraw(obs)
 
 def step(action):
     obs, reward, done, info = env.step(action)
-    print('step=%s, reward=%.2f' % (env.step_count, reward))
+    # print('step=%s, reward=%.2f' % (env.step_count, reward))
     print("Acted : ", obs[1])
-    print("Carry", env.env.carrying)
+    # print("Carry", env.env.carrying)
 
     if done:
         print('done!')
         reset()
     else:
-        redraw(obs)
+        redraw(obs[0])
 
 def key_handler(event):
     print('pressed', event.key)
@@ -100,7 +103,11 @@ parser.add_argument(
 
 args = parser.parse_args()
 
-env = ActionActedWrapper(Minigrid2Image(gym.make(args.env)))
+
+if "Minigrid" in args.env:
+    env = ActionActedWrapper(Minigrid2Image(gym.make(args.env)))
+else:
+    raise NotImplementedError("Minigrid only is available")
 
 if args.agent_view:
     env = RGBImgPartialObsWrapper(env)

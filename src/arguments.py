@@ -32,7 +32,7 @@ parser.add_argument('--disable_checkpoint', action='store_true',
                     help='Disable saving checkpoint.')
 parser.add_argument('--savedir', default='../',
                     help='Root dir where experiment data will be saved.')
-parser.add_argument('--num_actors', default=35, type=int, metavar='N',
+parser.add_argument('--num_actors', default=40, type=int, metavar='N',
                     help='Number of actors.')
 parser.add_argument('--actor_usage', default=2000, type=int, metavar='N',
                     help='Number of time an agent is queried before killing, to avoid memory leak')
@@ -44,7 +44,7 @@ parser.add_argument('--unroll_length', default=100, type=int, metavar='T',
                     help='The unroll length (time dimension).')
 parser.add_argument('--queue_timeout', default=1, type=int,
                     metavar='S', help='Error timeout for queue.')
-parser.add_argument('--num_buffers', default=70, type=int,
+parser.add_argument('--num_buffers', default=80, type=int,
                     metavar='N', help='Number of shared-memory buffers.')
 parser.add_argument('--num_threads', default=4, type=int,
                     metavar='N', help='Number learner threads.')
