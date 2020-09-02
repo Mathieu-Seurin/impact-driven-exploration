@@ -15,7 +15,8 @@ import os
 import numpy as np
 
 from src.core import prof
-from src.env_utils import FrameStack, Environment, OldEnvironment, VizdoomSparseWrapper, Minigrid2Image, ActionActedWrapper
+from src.env_utils import FrameStack, Environment, VizdoomSparseWrapper,\
+    Minigrid2Image, ActionActedWrapper, VizdoomNormRewardWrapper, NoisyBackgroundWrapper
 from src import atari_wrappers as atari_wrappers
 
 from gym_minigrid import wrappers as wrappers
@@ -60,7 +61,11 @@ Buffers = typing.Dict[str, typing.List[torch.Tensor]]
 def create_env(flags):
     if 'MiniGrid' in flags.env:
         # Added action wrapper to know if the agent acted in env
-        return ActionActedWrapper(Minigrid2Image(wrappers.FullyObsWrapper(gym.make(flags.env))))
+        env = Minigrid2Image(wrappers.FullyObsWrapper(gym.make(flags.env)))
+        if flags.noisy_background:
+            env = NoisyBackgroundWrapper(env)
+        return ActionActedWrapper(env)
+
     elif 'Mario' in flags.env:
         env = atari_wrappers.wrap_pytorch(
             atari_wrappers.wrap_deepmind(
@@ -79,7 +84,7 @@ def create_env(flags):
                 frame_stack=True,
                 scale=False,
                 fire=False)) 
-        return ActionActedWrapper(VizdoomSparseWrapper(env))
+        return ActionActedWrapper(VizdoomNormRewardWrapper(env)) # VizdoomSparseWrapper(env))
 
 
 def get_batch(free_queue: mp.SimpleQueue,
@@ -156,7 +161,7 @@ def act(i: int, free_queue: mp.SimpleQueue, full_queue: mp.SimpleQueue,
         if flags.num_input_frames > 1:
             gym_env = FrameStack(gym_env, flags.num_input_frames)  
 
-        env = OldEnvironment(gym_env, fix_seed=flags.fix_seed, env_seed=flags.env_seed)
+        env = Environment(gym_env, fix_seed=flags.fix_seed, env_seed=flags.env_seed)
         #memory_tracker = tracker.SummaryTracker()
 
         env_output = env.initial()

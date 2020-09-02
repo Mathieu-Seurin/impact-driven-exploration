@@ -27,9 +27,9 @@ from time import sleep
 import vizdoom as vzd
 from argparse import ArgumentParser
 
-#DEFAULT_CONFIG = "vizdoomgym/vizdoomgym/envs/scenarios/deadly_corridor.cfg"
-#DEFAULT_CONFIG = "vizdoomgym/vizdoomgym/envs/scenarios/my_way_home.cfg"
-DEFAULT_CONFIG = "vizdoomgym/vizdoomgym/envs/scenarios/take_cover.cfg"
+DEFAULT_CONFIG = "vizdoomgym/vizdoomgym/envs/scenarios/deadly_corridor.cfg"
+# DEFAULT_CONFIG = "vizdoomgym/vizdoomgym/envs/scenarios/my_way_home.cfg"
+# DEFAULT_CONFIG = "vizdoomgym/vizdoomgym/envs/scenarios/take_cover.cfg"
 
 if __name__ == "__main__":
     parser = ArgumentParser("ViZDoom example showing how to use SPECTATOR mode.")
@@ -43,7 +43,7 @@ if __name__ == "__main__":
     game = vzd.DoomGame()
 
     # Choose scenario config file you wish to watch.
-    # Don't load two configs cause the second will overrite the first one.
+    # Don't load two configs cause the second will overwrite the first one.
     # Multiple config files are ok but combining these ones doesn't make much sense.
 
     game.load_config(args.config)

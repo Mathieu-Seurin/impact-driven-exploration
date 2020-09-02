@@ -88,7 +88,8 @@ parser.add_argument('--rnd_loss_coef', default=0.1, type=float,
                     help='Coefficient for the RND loss coefficient relative to the IMPALA one.')
 parser.add_argument('--action_dist_decay_coef', default=4, type=float,
                     help="Action Distribution ratio scaler")
-
+parser.add_argument('--change_treshold', default=-1, type=float,
+                    help="Minimum change in representation to consider the action as useful")
 
 # Singleton Environments.
 parser.add_argument('--fix_seed', action='store_true',
@@ -99,6 +100,9 @@ parser.add_argument('--env_seed', default=1, type=int,
                     singleton (i.e. not procedurally generated) environment.')
 parser.add_argument('--no_reward', action='store_true',
                     help='No extrinsic reward. The agent uses only intrinsic reward to learn.')
+parser.add_argument('--noisy_background', action='store_true',
+                    help="Minimum change in representation to consider the action as useful")
+
 
 # Training Models.
 parser.add_argument('--model', default='vanilla',

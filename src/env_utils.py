@@ -20,6 +20,25 @@ def _format_observation(obs):
     return obs.view((1, 1) + obs.shape) 
 
 
+class VizdoomNormRewardWrapper(gym.Wrapper):
+    def __init__(self, env, max_reward=1000):
+        gym.Wrapper.__init__(self, env)
+        self.observation_space = env.observation_space
+        self.last_obs = None
+        self.max_reward = max_reward
+
+    def reset(self):
+        return self.env.reset()
+
+    def step(self, action):
+        frame, reward, done, info = self.env.step(action)
+
+        info["old_reward"] = reward
+        reward = reward / self.max_reward
+
+        return frame, reward, done, info
+
+
 class VizdoomSparseWrapper(gym.Wrapper):
     def __init__(self, env):
         gym.Wrapper.__init__(self, env)
@@ -37,7 +56,7 @@ class VizdoomSparseWrapper(gym.Wrapper):
         if done:
             if self.unwrapped.game.is_player_dead() or self.unwrapped.game.get_episode_time() >= self.unwrapped.game.get_episode_timeout():
                 #print("death or timeout  ", reward)
-                reward = 0
+                reward = -1
             else:
                 #assert reward > 900
                 #print("victory  ", reward)
@@ -77,6 +96,11 @@ class ActionActedWrapper(gym.Wrapper):
 
         return (frame, action_acted), reward, done, info
 
+class NoisyBackgroundWrapper(gym.ObservationWrapper):
+    def observation(self, observation):
+        rand_color = np.random.randint(len(COLOR_TO_IDX))
+        observation[observation[:, :, 0] == 1, 1] = rand_color
+        return observation
 
 class Minigrid2Image(gym.ObservationWrapper):
     def __init__(self, env):

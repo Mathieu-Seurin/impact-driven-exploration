@@ -58,8 +58,8 @@ def learn(actor_model,
             predicted_embedding = predictor_network(batch, next_state=True)\
                     .reshape(flags.unroll_length, flags.batch_size, 128)
         else:
-            random_embedding = random_target_network(batch['partial_obs'][1:].to(device=flags.device))
-            predicted_embedding = predictor_network(batch['partial_obs'][1:].to(device=flags.device))
+            random_embedding = random_target_network(batch['frame'][1:].to(device=flags.device))
+            predicted_embedding = predictor_network(batch['frame'][1:].to(device=flags.device))
 
         intrinsic_rewards = torch.norm(predicted_embedding.detach() - random_embedding.detach(), dim=2, p=2)
 

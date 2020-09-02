@@ -10,7 +10,7 @@ from gym_minigrid.window import Window
 
 import vizdoomgym
 
-from src.env_utils import ActionActedWrapper, Minigrid2Image
+from src.env_utils import ActionActedWrapper, Minigrid2Image, NoisyBackgroundWrapper
 
 def redraw(img):
     if not args.agent_view:
@@ -28,13 +28,14 @@ def reset():
         print('Mission: %s' % env.mission)
         window.set_caption(env.mission)
 
-    obs = obs.type(np.float)
+    obs = obs.astype(np.float)
     redraw(obs)
 
 def step(action):
     obs, reward, done, info = env.step(action)
     # print('step=%s, reward=%.2f' % (env.step_count, reward))
     print("Acted : ", obs[1])
+    print("Obs :", obs)
     # print("Carry", env.env.carrying)
 
     if done:
@@ -104,8 +105,8 @@ parser.add_argument(
 args = parser.parse_args()
 
 
-if "Minigrid" in args.env:
-    env = ActionActedWrapper(Minigrid2Image(gym.make(args.env)))
+if "MiniGrid" in args.env:
+    env = ActionActedWrapper(NoisyBackgroundWrapper(Minigrid2Image(gym.make(args.env))))
 else:
     raise NotImplementedError("Minigrid only is available")
 

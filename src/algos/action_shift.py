@@ -45,6 +45,7 @@ def learn(actor_model,
           scheduler,
           flags,
           frames=None,
+          state_embedding_model=None,
           lock=threading.Lock()):
     """Performs a learning (optimization) step."""
     with lock:
@@ -52,27 +53,20 @@ def learn(actor_model,
                                    dtype=torch.float32).to(device=flags.device)
         count_rewards = batch['episode_state_count'][1:].float().to(device=flags.device)
 
-        # if flags.use_fullobs_intrinsic:
-        #     frame_seq =   batch['partial_obs'][:-1].to(device=flags.device)
-        #     carried_obj = batch["carried_obj"][:-1].to(device=flags.device)
-        #     carried_col = batch["carried_col"][:-1].to(device=flags.device)
-        #
-        #     next_frame_seq =   batch['partial_obs'][1:].to(device=flags.device)
-        #     next_carried_obj = batch["carried_obj"][1:].to(device=flags.device)
-        #     next_carried_col = batch["carried_col"][1:].to(device=flags.device)
-        #
-        #     act_distrib =      action_distrib_model(frame_seq, carried_obj, carried_col)  # check alignement
-        #     next_act_distrib = action_distrib_model(next_frame_seq, next_carried_obj, next_carried_col)
-        # else:
-        #     raise NotImplementedError("Full obs is needed, as the object carried is useful to compute action prediction")
-
         action_id, count_action = torch.unique(batch["action"].flatten(), return_counts=True)
         action_hist["usage"][action_id] += count_action.cpu()
 
-        acted_id, action_acted = torch.unique((batch["action"] + 1) * batch["action_acted"] - 1, return_counts=True)
-        action_hist["acted"][acted_id[1:]] += action_acted[1:].cpu()
+        if state_embedding_model:
+            current_state_embedding = state_embedding_model(batch['frame'][:-1].to(device=flags.device))
+            next_state_embedding = state_embedding_model(batch['frame'][1:].to(device=flags.device))
 
-        # action_hist["acted"][:len(action_acted[1:])] += action_acted[1:].cpu()
+            batch_action_acted = torch.abs(current_state_embedding - next_state_embedding) > flags.change_treshold
+            acted_id, action_acted = torch.unique((batch["action"][:-1] + 1) * batch_action_acted.long() - 1, return_counts=True)
+        else:
+            acted_id, action_acted = torch.unique((batch["action"] + 1) * batch["action_acted"] - 1, return_counts=True)
+
+
+        action_hist["acted"][acted_id[1:]] += action_acted[1:].cpu()
 
         action_rewards = torch.zeros_like(batch["action"]).float()
         acted_ratio = action_hist["acted"].float() / action_hist["usage"].float()
@@ -86,15 +80,6 @@ def learn(actor_model,
         reward_for_an_action[torch.isnan(reward_for_an_action)] = 0
         assert torch.all(reward_for_an_action >= 0), "Problem, reward should only be positive"
 
-        # needed_obj_count = 0
-        # for obj in gc.get_objects():
-        #     try:
-        #         if torch.is_tensor(obj) or (hasattr(obj, 'data') and torch.is_tensor(obj.data)):
-        #             needed_obj_count += 1
-        #     except:
-        #         pass
-        #
-        # print(needed_obj_count)
 
         for id in action_id:
             action_rewards[(batch["action"]==id.item()) & batch["action_acted"].byte()] = reward_for_an_action[id]
@@ -208,17 +193,14 @@ def train(flags):
             model = FullObsMinigridPolicyNet(env.observation_space.shape, env.action_space.n)
         else:
             model = MinigridPolicyNet(env.observation_space.shape, env.action_space.n)
-
-        # if flags.use_fullobs_intrinsic:
-        #     action_distribution_model = MinigridActionDistributionNet(env.observation_space.shape, env.action_space.n) \
-        #         .to(device=flags.device)
-        # else:
-        #     raise NotImplementedError("ATM Action shift requires full obs (specially carrying info")
-
     else:
         model = MarioDoomPolicyNet(env.observation_space.shape, env.action_space.n)
-        # action_distribution_model = MarioDoomStateActionDistribNet(env.observation_space.shape) \
-        #     .to(device=flags.device)
+
+        if flags.change_treshold >= 0:
+            state_embedding_model = MarioDoomStateEmbeddingNet(env.observation_space.shape).to(device=flags.device)
+        else:
+            state_embedding_model = None
+
 
     action_hist = dict([('usage', torch.zeros(env.action_space.n).long()),('acted', torch.zeros(env.action_space.n).long())])
     buffers = create_buffers(env.observation_space.shape, model.num_actions, flags)
@@ -265,7 +247,7 @@ def train(flags):
         momentum=flags.momentum,
         eps=flags.epsilon,
         alpha=flags.alpha)
-
+    #
     # action_distribution_optimizer = torch.optim.RMSprop(
     #     action_distribution_model.parameters(),
     #     lr=flags.learning_rate,
@@ -311,7 +293,8 @@ def train(flags):
                           optimizer=optimizer, #action_distribution_optimizer,
                           scheduler=scheduler,
                           flags=flags,
-                          frames=frames)
+                          frames=frames,
+                          state_embedding_model=state_embedding_model)
 
             timings.time('learn')
             with lock:
@@ -346,7 +329,7 @@ def train(flags):
             'scheduler_state_dict': scheduler.state_dict(),
             'action_hist': action_hist,
             'flags': vars(flags),
-            # 'action_distribution_optimizer_state_dict': action_distribution_optimizer.state_dict(),
+            #'action_distribution_optimizer_state_dict': action_distribution_optimizer.state_dict(),
             # 'action_distribution_model_state_dict': action_distribution_model.state_dict(),
         }, checkpointpath)
 
