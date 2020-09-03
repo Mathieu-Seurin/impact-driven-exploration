@@ -3,7 +3,7 @@ import gym
 
 import src.models as models
 
-from src.env_utils import OldEnvironment, ActionActedWrapper, Minigrid2Image, VizdoomSparseWrapper
+from src.env_utils import Environment, ActionActedWrapper, Minigrid2Image, VizdoomSparseWrapper, NoisyBackgroundWrapper
 import src.atari_wrappers as atari_wrappers
 import vizdoomgym
 
@@ -19,16 +19,30 @@ parser.add_argument('--env', type=str, default='MiniGrid-ObstructedMaze-2Dlh-v0'
 parser.add_argument('--expe_path', type=str,
                     help='absolute path where model, optimizer etc.. are stored')
 
-parser.add_argument('--use_fullobs_policy', default=False)
-parser.add_argument('--stop_visu', type=bool, default=False)
+parser.add_argument('--noisy_background', action='store_true')
+parser.add_argument('--use_fullobs_policy', action='store_true')
+parser.add_argument('--stop_visu', action='store_true')
 
 args = parser.parse_args()
 
+action2name = dict([
+    (0,'turn_left'),
+    (1,'turn_right'),
+    (2,'forward'),
+    (3,'pickup'),
+    (4, 'drop'),
+    (5,'toggle'),
+    (6, 'done')
+])
 
-is_minigrid = "Minigrid" in args.env
+
+is_minigrid = "MiniGrid" in args.env
 
 if is_minigrid:
-    env = ActionActedWrapper(Minigrid2Image(gym.make(args.env)))
+    env = Minigrid2Image(gym.make(args.env))
+    if args.noisy_background:
+        env = NoisyBackgroundWrapper(env)
+    env = ActionActedWrapper(env)
 else:
     env = atari_wrappers.wrap_pytorch(
         atari_wrappers.wrap_deepmind(
@@ -45,6 +59,8 @@ if 'MiniGrid' in args.env:
     else:
         model = models.MinigridPolicyNet(env.observation_space.shape, env.action_space.n)
 
+    embedder_model = models.MinigridStateEmbeddingNet(env.observation_space.shape)
+
 else:
     model = models.MarioDoomPolicyNet(env.observation_space.shape, env.action_space.n)
     embedder_model = models.MarioDoomStateEmbeddingNet(env.observation_space.shape)
@@ -59,10 +75,10 @@ if 'action_hist' in checkpoint:
 #model.load_state_dict(checkpoint['model_state_dict'])
 model.train(False)
 
-# if 'state_embedding_model_state_dict' in checkpoint:
-#     embedder_model.load_state_dict(checkpoint['state_embedding_model_state_dict'])
+if 'state_embedding_model_state_dict' in checkpoint:
+    embedder_model.load_state_dict(checkpoint['state_embedding_model_state_dict'])
 
-env = OldEnvironment(env)
+env = Environment(env)
 env_output = env.initial()
 
 agent_state = model.initial_state(batch_size=1)
@@ -83,9 +99,7 @@ while True :
 
     next_state_embedding = embedder_model(env_output['frame'])
 
-    if action==2:
-        print("TIR")
-    print(torch.abs(state_embedding - next_state_embedding).sum())
+    print(action2name[action.item()], torch.abs(state_embedding - next_state_embedding).sum())
 
     state_embedding = next_state_embedding
 

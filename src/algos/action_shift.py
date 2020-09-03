@@ -6,12 +6,9 @@ import timeit
 import pprint
 import traceback
 
-import numpy as np
-
 import torch
 from torch import multiprocessing as mp
 from torch import nn
-from torch.nn import functional as F
 
 from src.core import file_writer
 from src.core import prof
@@ -22,9 +19,15 @@ import src.losses as losses
 
 from src.env_utils import FrameStack
 from src.utils import get_batch, log, create_env, create_buffers, act
+from src.action_hist import FlatHisto, RunningHisto
 
 MinigridActionDistributionNet = models.MinigridActionDistribution
 MinigridPolicyNet = models.MinigridPolicyNet
+
+MinigridStateEmbeddingNet = models.MinigridStateEmbeddingNet
+MinigridForwardDynamicsNet = models.MinigridForwardDynamicsNet
+MinigridInverseDynamicsNet = models.MinigridInverseDynamicsNet
+
 
 MarioDoomStateEmbeddingNet = models.MarioDoomStateEmbeddingNet
 MarioDoomForwardDynamicsNet = models.MarioDoomForwardDynamicsNet
@@ -54,7 +57,6 @@ def learn(actor_model,
         count_rewards = batch['episode_state_count'][1:].float().to(device=flags.device)
 
         action_id, count_action = torch.unique(batch["action"].flatten(), return_counts=True)
-        action_hist["usage"][action_id] += count_action.cpu()
 
         if state_embedding_model:
             current_state_embedding = state_embedding_model(batch['frame'][:-1].to(device=flags.device))
@@ -64,12 +66,12 @@ def learn(actor_model,
             acted_id, action_acted = torch.unique((batch["action"][:-1] + 1) * batch_action_acted.long() - 1, return_counts=True)
         else:
             acted_id, action_acted = torch.unique((batch["action"] + 1) * batch["action_acted"] - 1, return_counts=True)
+            batch_action_acted = batch["action_acted"].byte()
 
-
-        action_hist["acted"][acted_id[1:]] += action_acted[1:].cpu()
+        action_hist.add(action_id, count_action.cpu().float(), acted_id[1:].cpu(), action_acted[1:].cpu().float())
 
         action_rewards = torch.zeros_like(batch["action"]).float()
-        acted_ratio = action_hist["acted"].float() / action_hist["usage"].float()
+        acted_ratio = action_hist.usage_ratio()
 
         if flags.action_dist_decay_coef == 0:
             reward_for_an_action = 1 - acted_ratio
@@ -82,7 +84,7 @@ def learn(actor_model,
 
 
         for id in action_id:
-            action_rewards[(batch["action"]==id.item()) & batch["action_acted"].byte()] = reward_for_an_action[id]
+            action_rewards[(batch["action"]==id.item()) & batch_action_acted] = reward_for_an_action[id]
 
         # control_rewards = torch.norm(next_act_distrib - act_distrib, dim=2, p=2)
 
@@ -193,16 +195,23 @@ def train(flags):
             model = FullObsMinigridPolicyNet(env.observation_space.shape, env.action_space.n)
         else:
             model = MinigridPolicyNet(env.observation_space.shape, env.action_space.n)
-    else:
-        model = MarioDoomPolicyNet(env.observation_space.shape, env.action_space.n)
 
         if flags.change_treshold >= 0:
-            state_embedding_model = MarioDoomStateEmbeddingNet(env.observation_space.shape).to(device=flags.device)
+            state_embedding_model = MinigridStateEmbeddingNet(env.observation_space.shape).to(device=flags.device)
         else:
+            action_hist = FlatHisto(env.action_space.n)
             state_embedding_model = None
 
+    else:
+        raise NotImplementedError("Doom is not available")
+        # model = MarioDoomPolicyNet(env.observation_space.shape, env.action_space.n)
+        #
+        # if flags.change_treshold >= 0:
+        #     state_embedding_model = MarioDoomStateEmbeddingNet(env.observation_space.shape).to(device=flags.device)
+        # else:
+        #     state_embedding_model = None
 
-    action_hist = dict([('usage', torch.zeros(env.action_space.n).long()),('acted', torch.zeros(env.action_space.n).long())])
+
     buffers = create_buffers(env.observation_space.shape, model.num_actions, flags)
 
     model.share_memory()
