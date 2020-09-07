@@ -22,7 +22,7 @@ parser.add_argument('--run_id', default=0, type=int,
                     (instead of a different random seed since torchbeast does not accept this).')
 parser.add_argument('--seed', default=0, type=int,
                     help='Environment seed.')
-parser.add_argument('--save_interval', default=10, type=int, metavar='N',
+parser.add_argument('--save_interval', default=30, type=int, metavar='N',
                     help='Time interval (in minutes) at which to save the model.')    
 parser.add_argument('--checkpoint_num_frames', default=10000000, type=int,
                     help='Number of frames for checkpoint to load.')
@@ -32,7 +32,7 @@ parser.add_argument('--disable_checkpoint', action='store_true',
                     help='Disable saving checkpoint.')
 parser.add_argument('--savedir', default='../',
                     help='Root dir where experiment data will be saved.')
-parser.add_argument('--num_actors', default=40, type=int, metavar='N',
+parser.add_argument('--num_actors', default=43, type=int, metavar='N',
                     help='Number of actors.')
 parser.add_argument('--actor_usage', default=2000, type=int, metavar='N',
                     help='Number of time an agent is queried before killing, to avoid memory leak')
@@ -90,6 +90,9 @@ parser.add_argument('--action_dist_decay_coef', default=4, type=float,
                     help="Action Distribution ratio scaler")
 parser.add_argument('--change_treshold', default=-1, type=float,
                     help="Minimum change in representation to consider the action as useful")
+parser.add_argument('--histogram_length', default=0, type=float,
+                    help="If you want a windowed histogram for action-shift, change length")
+
 
 # Singleton Environments.
 parser.add_argument('--fix_seed', action='store_true',
@@ -100,9 +103,8 @@ parser.add_argument('--env_seed', default=1, type=int,
                     singleton (i.e. not procedurally generated) environment.')
 parser.add_argument('--no_reward', action='store_true',
                     help='No extrinsic reward. The agent uses only intrinsic reward to learn.')
-parser.add_argument('--noisy_background', action='store_true',
-                    help="Minimum change in representation to consider the action as useful")
-
+parser.add_argument('--noisy_wall', action='store_true',
+                    help="Change wall color in minigrid randomly")
 
 # Training Models.
 parser.add_argument('--model', default='vanilla',

@@ -3,7 +3,7 @@ import gym
 
 import src.models as models
 
-from src.env_utils import Environment, ActionActedWrapper, Minigrid2Image, VizdoomSparseWrapper, NoisyBackgroundWrapper
+from src.env_utils import Environment, ActionActedWrapper, Minigrid2Image, VizdoomSparseWrapper, NoisyBackgroundWrapper, NoisyWallWrapper
 import src.atari_wrappers as atari_wrappers
 import vizdoomgym
 
@@ -19,7 +19,7 @@ parser.add_argument('--env', type=str, default='MiniGrid-ObstructedMaze-2Dlh-v0'
 parser.add_argument('--expe_path', type=str,
                     help='absolute path where model, optimizer etc.. are stored')
 
-parser.add_argument('--noisy_background', action='store_true')
+parser.add_argument('--noisy_wall', action='store_true')
 parser.add_argument('--use_fullobs_policy', action='store_true')
 parser.add_argument('--stop_visu', action='store_true')
 
@@ -40,8 +40,8 @@ is_minigrid = "MiniGrid" in args.env
 
 if is_minigrid:
     env = Minigrid2Image(gym.make(args.env))
-    if args.noisy_background:
-        env = NoisyBackgroundWrapper(env)
+    if args.noisy_wall:
+        env = NoisyWallWrapper(env)
     env = ActionActedWrapper(env)
 else:
     env = atari_wrappers.wrap_pytorch(
@@ -72,7 +72,7 @@ print(checkpoint['flags'])
 if 'action_hist' in checkpoint:
     print(checkpoint["action_hist"])
 
-#model.load_state_dict(checkpoint['model_state_dict'])
+model.load_state_dict(checkpoint['model_state_dict'])
 model.train(False)
 
 if 'state_embedding_model_state_dict' in checkpoint:
@@ -93,8 +93,8 @@ if not args.stop_visu and is_minigrid:
 
 while True :
     model_output, agent_state = model(env_output, agent_state)
-    #action = model_output["action"]
-    action = torch.randint(low=0, high=env.gym_env.action_space.n, size=(1,))
+    action = model_output["action"]
+    #action = torch.randint(low=0, high=env.gym_env.action_space.n, size=(1,))
     env_output = env.step(action)
 
     next_state_embedding = embedder_model(env_output['frame'])
@@ -110,5 +110,5 @@ while True :
     if not args.stop_visu and is_minigrid:
         w.show_img(rgb_arr)
 
-    time.sleep(1)
+    time.sleep(0.1)
 

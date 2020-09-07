@@ -16,7 +16,7 @@ import numpy as np
 
 from src.core import prof
 from src.env_utils import FrameStack, Environment, VizdoomSparseWrapper,\
-    Minigrid2Image, ActionActedWrapper, VizdoomNormRewardWrapper, NoisyBackgroundWrapper
+    Minigrid2Image, ActionActedWrapper, VizdoomNormRewardWrapper, NoisyBackgroundWrapper, NoisyWallWrapper
 from src import atari_wrappers as atari_wrappers
 
 from gym_minigrid import wrappers as wrappers
@@ -62,8 +62,8 @@ def create_env(flags):
     if 'MiniGrid' in flags.env:
         # Added action wrapper to know if the agent acted in env
         env = Minigrid2Image(wrappers.FullyObsWrapper(gym.make(flags.env)))
-        if flags.noisy_background:
-            env = NoisyBackgroundWrapper(env)
+        if flags.noisy_wall:
+            env = NoisyWallWrapper(env)
         return ActionActedWrapper(env)
 
     elif 'Mario' in flags.env:

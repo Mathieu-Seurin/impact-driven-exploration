@@ -19,11 +19,10 @@ import src.losses as losses
 
 from src.env_utils import FrameStack
 from src.utils import get_batch, log, create_env, create_buffers, act
-from src.action_hist import FlatHisto, RunningHisto
+from src.action_hist import FlatHisto, WindowedHisto
 
-MinigridActionDistributionNet = models.MinigridActionDistribution
+#MinigridActionDistributionNet = models.MinigridActionDistribution
 MinigridPolicyNet = models.MinigridPolicyNet
-
 MinigridStateEmbeddingNet = models.MinigridStateEmbeddingNet
 MinigridForwardDynamicsNet = models.MinigridForwardDynamicsNet
 MinigridInverseDynamicsNet = models.MinigridInverseDynamicsNet
@@ -49,6 +48,11 @@ def learn(actor_model,
           flags,
           frames=None,
           state_embedding_model=None,
+          forward_dynamics_model=None,
+          inverse_dynamics_model=None,
+          state_embedding_optimizer=None,
+          forward_dynamics_optimizer=None,
+          inverse_dynamics_optimizer=None,
           lock=threading.Lock()):
     """Performs a learning (optimization) step."""
     with lock:
@@ -59,18 +63,33 @@ def learn(actor_model,
         action_id, count_action = torch.unique(batch["action"].flatten(), return_counts=True)
 
         if state_embedding_model:
-            current_state_embedding = state_embedding_model(batch['frame'][:-1].to(device=flags.device))
-            next_state_embedding = state_embedding_model(batch['frame'][1:].to(device=flags.device))
+            current_state_embedding = state_embedding_model(batch['partial_obs'][:-1].to(device=flags.device))
+            next_state_embedding = state_embedding_model(batch['partial_obs'][1:].to(device=flags.device))
 
-            batch_action_acted = torch.abs(current_state_embedding - next_state_embedding) > flags.change_treshold
+            batch_action_acted = torch.abs(current_state_embedding - next_state_embedding).sum(dim=2) > flags.change_treshold
             acted_id, action_acted = torch.unique((batch["action"][:-1] + 1) * batch_action_acted.long() - 1, return_counts=True)
+
+            pred_next_state_emb = forward_dynamics_model(
+                current_state_embedding, batch['action'][1:].to(device=flags.device))
+            pred_actions = inverse_dynamics_model(current_state_embedding, next_state_embedding)
+
+            forward_dynamics_loss = flags.forward_loss_coef * \
+                                    losses.compute_forward_dynamics_loss(pred_next_state_emb, next_state_embedding)
+
+            inverse_dynamics_loss = flags.inverse_loss_coef * \
+                                    losses.compute_inverse_dynamics_loss(pred_actions, batch['action'][1:])
+
+
         else:
             acted_id, action_acted = torch.unique((batch["action"] + 1) * batch["action_acted"] - 1, return_counts=True)
-            batch_action_acted = batch["action_acted"].byte()
+            batch_action_acted = batch["action_acted"][:-1].byte()
+
+            forward_dynamics_loss = torch.zeros(1)
+            inverse_dynamics_loss = torch.zeros(1)
 
         action_hist.add(action_id, count_action.cpu().float(), acted_id[1:].cpu(), action_acted[1:].cpu().float())
 
-        action_rewards = torch.zeros_like(batch["action"]).float()
+        action_rewards = torch.zeros_like(batch["action"][:-1]).float()
         acted_ratio = action_hist.usage_ratio()
 
         if flags.action_dist_decay_coef == 0:
@@ -84,19 +103,13 @@ def learn(actor_model,
 
 
         for id in action_id:
-            action_rewards[(batch["action"]==id.item()) & batch_action_acted] = reward_for_an_action[id]
+            action_rewards[(batch["action"][:-1]==id.item()) & batch_action_acted] = reward_for_an_action[id]
 
-        # control_rewards = torch.norm(next_act_distrib - act_distrib, dim=2, p=2)
-
-        intrinsic_rewards = count_rewards * action_rewards[:-1]
+        intrinsic_rewards = count_rewards * action_rewards
 
         intrinsic_reward_coef = flags.intrinsic_reward_coef
         intrinsic_rewards *= intrinsic_reward_coef
 
-        # actions = batch['action'][:-1].to(device=flags.device)
-        # actions_acted = batch['action_acted'][1:].to(device=flags.device)
-        # act_distrib_loss = flags.act_distrib_loss_coef * \
-        #                    losses.compute_act_distrib_loss(act_distrib, actions_acted, actions)
 
         learner_outputs, unused_state = model(batch, initial_agent_state)
 
@@ -143,22 +156,37 @@ def learn(actor_model,
             'pg_loss': pg_loss.item(),
             'baseline_loss': baseline_loss.item(),
             'entropy_loss': entropy_loss.item(),
-            # 'act_distrib_loss': act_distrib_loss.item(),
             'mean_rewards': torch.mean(rewards).item(),
             'mean_intrinsic_rewards': torch.mean(intrinsic_rewards).item(),
             'mean_total_rewards': torch.mean(total_rewards).item(),
             'mean_action_rewards': torch.mean(action_rewards).item(),
             'mean_count_rewards': torch.mean(count_rewards).item(),
+            'forward_dynamics_loss': forward_dynamics_loss.item(),
+            'inverse_dynamics_loss': inverse_dynamics_loss.item(),
         }
 
         scheduler.step()
         optimizer.zero_grad()
-        # action_distribution_optimizer.zero_grad()
+
+        if state_embedding_model:
+            state_embedding_optimizer.zero_grad()
+            forward_dynamics_optimizer.zero_grad()
+            inverse_dynamics_optimizer.zero_grad()
+
         total_loss.backward()
         nn.utils.clip_grad_norm_(model.parameters(), flags.max_grad_norm)
-        # nn.utils.clip_grad_norm_(action_distrib_model.parameters(), flags.max_grad_norm)
+
+        if state_embedding_model:
+            nn.utils.clip_grad_norm_(state_embedding_model.parameters(), flags.max_grad_norm)
+            nn.utils.clip_grad_norm_(forward_dynamics_model.parameters(), flags.max_grad_norm)
+            nn.utils.clip_grad_norm_(inverse_dynamics_model.parameters(), flags.max_grad_norm)
+
         optimizer.step()
-        # action_distribution_optimizer.step()
+
+        if state_embedding_model:
+            state_embedding_optimizer.step()
+            forward_dynamics_optimizer.step()
+            inverse_dynamics_optimizer.step()
 
         actor_model.load_state_dict(model.state_dict())
         return stats
@@ -198,9 +226,13 @@ def train(flags):
 
         if flags.change_treshold >= 0:
             state_embedding_model = MinigridStateEmbeddingNet(env.observation_space.shape).to(device=flags.device)
+            forward_dynamics_model = MinigridForwardDynamicsNet(env.action_space.n).to(device=flags.device)
+            inverse_dynamics_model = MinigridInverseDynamicsNet(env.action_space.n).to(device=flags.device)
+
         else:
-            action_hist = FlatHisto(env.action_space.n)
             state_embedding_model = None
+            forward_dynamics_model = None
+            inverse_dynamics_model = None
 
     else:
         raise NotImplementedError("Doom is not available")
@@ -211,6 +243,10 @@ def train(flags):
         # else:
         #     state_embedding_model = None
 
+    if flags.histogram_length:
+        action_hist = WindowedHisto(env.action_space.n, flags.histogram_length)
+    else:
+        action_hist = FlatHisto(env.action_space.n)
 
     buffers = create_buffers(env.observation_space.shape, model.num_actions, flags)
 
@@ -256,13 +292,33 @@ def train(flags):
         momentum=flags.momentum,
         eps=flags.epsilon,
         alpha=flags.alpha)
-    #
-    # action_distribution_optimizer = torch.optim.RMSprop(
-    #     action_distribution_model.parameters(),
-    #     lr=flags.learning_rate,
-    #     momentum=flags.momentum,
-    #     eps=flags.epsilon,
-    #     alpha=flags.alpha)
+
+    if state_embedding_model:
+        state_embedding_optimizer = torch.optim.RMSprop(
+            state_embedding_model.parameters(),
+            lr=flags.learning_rate,
+            momentum=flags.momentum,
+            eps=flags.epsilon,
+            alpha=flags.alpha)
+
+        inverse_dynamics_optimizer = torch.optim.RMSprop(
+            inverse_dynamics_model.parameters(),
+            lr=flags.learning_rate,
+            momentum=flags.momentum,
+            eps=flags.epsilon,
+            alpha=flags.alpha)
+
+        forward_dynamics_optimizer = torch.optim.RMSprop(
+            forward_dynamics_model.parameters(),
+            lr=flags.learning_rate,
+            momentum=flags.momentum,
+            eps=flags.epsilon,
+            alpha=flags.alpha)
+    else:
+        state_embedding_optimizer = None
+        inverse_dynamics_optimizer = None
+        forward_dynamics_optimizer = None
+
 
     def lr_lambda(epoch):
         return 1 - min(epoch * T * B, flags.total_frames) / flags.total_frames
@@ -281,7 +337,8 @@ def train(flags):
         'mean_total_rewards',
         'mean_action_rewards',
         'mean_count_rewards',
-        # 'action_distribution_loss',
+        'forward_dynamics_loss',
+        'inverse_dynamics_loss'
     ]
     logger.info('# Step\t%s', '\t'.join(stat_keys))
     frames, stats = 0, {}
@@ -303,7 +360,12 @@ def train(flags):
                           scheduler=scheduler,
                           flags=flags,
                           frames=frames,
-                          state_embedding_model=state_embedding_model)
+                          state_embedding_model=state_embedding_model,
+                          forward_dynamics_model=forward_dynamics_model,
+                          inverse_dynamics_model=inverse_dynamics_model,
+                          state_embedding_optimizer=state_embedding_optimizer,
+                          inverse_dynamics_optimizer=inverse_dynamics_optimizer,
+                          forward_dynamics_optimizer=forward_dynamics_optimizer)
 
             timings.time('learn')
             with lock:
@@ -331,16 +393,29 @@ def train(flags):
         checkpointpath = os.path.expandvars(
             os.path.expanduser('%s/%s/%s' % (flags.savedir, flags.xpid,
                                              'model.tar')))
+
+        action_hist_path = os.path.expandvars(
+            os.path.expanduser('%s/%s/%s' % (flags.savedir, flags.xpid,
+                                             'action_hist.tar')))
+
         log.info('Saving checkpoint to %s', checkpointpath)
         torch.save({
             'model_state_dict': model.state_dict(),
             'optimizer_state_dict': optimizer.state_dict(),
             'scheduler_state_dict': scheduler.state_dict(),
-            'action_hist': action_hist,
             'flags': vars(flags),
             #'action_distribution_optimizer_state_dict': action_distribution_optimizer.state_dict(),
             # 'action_distribution_model_state_dict': action_distribution_model.state_dict(),
         }, checkpointpath)
+
+        try:
+            action_hist_list = torch.load(action_hist_path)
+        except FileNotFoundError:
+            action_hist_list = []
+
+        action_hist_list.append(action_hist.return_full_hist())
+        torch.save(action_hist_list, action_hist_path)
+
 
     timer = timeit.default_timer
     try:

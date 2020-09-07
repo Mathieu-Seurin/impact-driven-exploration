@@ -102,6 +102,12 @@ class NoisyBackgroundWrapper(gym.ObservationWrapper):
         observation[observation[:, :, 0] == 1, 1] = rand_color
         return observation
 
+class NoisyWallWrapper(gym.ObservationWrapper):
+    def observation(self, observation):
+        rand_color = np.random.randint(len(COLOR_TO_IDX))
+        observation[observation[:, :, 0] == 2, 1] = rand_color
+        return observation
+
 class Minigrid2Image(gym.ObservationWrapper):
     def __init__(self, env):
         gym.ObservationWrapper.__init__(self, env)

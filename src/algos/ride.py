@@ -75,7 +75,7 @@ def learn(actor_model,
         
         pred_next_state_emb = forward_dynamics_model(
             state_emb, batch['action'][1:].to(device=flags.device))
-        pred_actions = inverse_dynamics_model(state_emb, next_state_emb) 
+        pred_actions = inverse_dynamics_model(state_emb, next_state_emb)
 
         control_rewards = torch.norm(next_state_emb - state_emb, dim=2, p=2)
 
