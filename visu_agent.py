@@ -22,6 +22,10 @@ parser.add_argument('--expe_path', type=str,
 parser.add_argument('--noisy_wall', action='store_true')
 parser.add_argument('--use_fullobs_policy', action='store_true')
 parser.add_argument('--stop_visu', action='store_true')
+parser.add_argument('--fix_seed', action='store_true')
+parser.add_argument('--env_seed', default=1, type=int)
+
+
 
 args = parser.parse_args()
 
@@ -39,7 +43,10 @@ action2name = dict([
 is_minigrid = "MiniGrid" in args.env
 
 if is_minigrid:
-    env = Minigrid2Image(gym.make(args.env))
+    env = gym.make(args.env)
+    print(env)
+    print(env.unwrapped.grid)
+    env = Minigrid2Image(env)
     if args.noisy_wall:
         env = NoisyWallWrapper(env)
     env = ActionActedWrapper(env)
@@ -78,8 +85,10 @@ model.train(False)
 if 'state_embedding_model_state_dict' in checkpoint:
     embedder_model.load_state_dict(checkpoint['state_embedding_model_state_dict'])
 
-env = Environment(env)
+env = Environment(env, fix_seed=args.fix_seed, env_seed=args.env_seed)
 env_output = env.initial()
+print(env.gym_env)
+
 
 agent_state = model.initial_state(batch_size=1)
 state_embedding = embedder_model(env_output['frame'])
@@ -93,22 +102,25 @@ if not args.stop_visu and is_minigrid:
 
 while True :
     model_output, agent_state = model(env_output, agent_state)
+
     action = model_output["action"]
     #action = torch.randint(low=0, high=env.gym_env.action_space.n, size=(1,))
     env_output = env.step(action)
 
     next_state_embedding = embedder_model(env_output['frame'])
 
-    print(action2name[action.item()], torch.abs(state_embedding - next_state_embedding).sum())
+    #print(action2name[action.item()], torch.abs(state_embedding - next_state_embedding).sum())
 
     state_embedding = next_state_embedding
 
     if env_output['done']:
         agent_state = model.initial_state(batch_size=1)
+        #print(env.env_seed)
 
     rgb_arr = env.gym_env.render('rgb_array')
     if not args.stop_visu and is_minigrid:
         w.show_img(rgb_arr)
 
-    time.sleep(0.1)
+    #print(env.gym_env)
+    time.sleep(0.01)
 

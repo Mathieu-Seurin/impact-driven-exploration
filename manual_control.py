@@ -12,6 +12,7 @@ import vizdoomgym
 
 from src.env_utils import ActionActedWrapper, Minigrid2Image, NoisyBackgroundWrapper
 
+
 def redraw(img):
     if not args.agent_view:
         img = env.render('rgb_array')#, tile_size=args.tile_size)
@@ -41,6 +42,7 @@ def step(action):
     if done:
         print('done!')
         reset()
+        quit()
     else:
         redraw(obs[0])
 
@@ -78,29 +80,10 @@ def key_handler(event):
         return
 
 parser = argparse.ArgumentParser()
-parser.add_argument(
-    "--env",
-    help="gym environment to load",
-    default='MiniGrid-MultiRoom-N6-v0'
-)
-parser.add_argument(
-    "--seed",
-    type=int,
-    help="random seed to generate the environment with",
-    default=-1
-)
-parser.add_argument(
-    "--tile_size",
-    type=int,
-    help="size at which to render tiles",
-    default=32
-)
-parser.add_argument(
-    '--agent_view',
-    default=False,
-    help="draw the agent sees (partially observable view)",
-    action='store_true'
-)
+parser.add_argument("--env", help="gym environment to load", default='MiniGrid-MultiRoom-N6-v0')
+parser.add_argument("--seed", type=int, help="random seed to generate the environment with", default=-1)
+parser.add_argument("--tile_size", type=int, help="size at which to render tiles", default=32)
+parser.add_argument('--agent_view', default=False, help="draw the agent sees (partially observable view)", action='store_true')
 
 args = parser.parse_args()
 
@@ -109,6 +92,12 @@ if "MiniGrid" in args.env:
     env = ActionActedWrapper(NoisyBackgroundWrapper(Minigrid2Image(gym.make(args.env))))
 else:
     raise NotImplementedError("Minigrid only is available")
+
+env.unwrapped.seed(args.seed)
+env.reset()
+
+
+
 
 if args.agent_view:
     env = RGBImgPartialObsWrapper(env)

@@ -28,6 +28,7 @@ import src.losses as losses
 
 from src.env_utils import FrameStack
 from src.utils import get_batch, log, create_env, create_buffers, act
+from src.action_hist import FlatHisto, WindowedHisto
 
 MinigridStateEmbeddingNet = models.MinigridStateEmbeddingNet
 MinigridForwardDynamicsNet = models.MinigridForwardDynamicsNet
@@ -56,6 +57,7 @@ def learn(actor_model,
           inverse_dynamics_optimizer, 
           scheduler,
           flags,
+          action_hist,
           frames=None,
           lock=threading.Lock()):
     """Performs a learning (optimization) step."""
@@ -63,6 +65,11 @@ def learn(actor_model,
         count_rewards = torch.ones((flags.unroll_length, flags.batch_size), 
             dtype=torch.float32).to(device=flags.device)
         count_rewards = batch['episode_state_count'][1:].float().to(device=flags.device)
+
+        # Saving action histogram, to visualize but NOT nudging it
+        action_id, count_action = torch.unique(batch["action"].flatten(), return_counts=True)
+        acted_id, action_acted = torch.unique((batch["action"] + 1) * batch["action_acted"] - 1, return_counts=True)
+        action_hist.add(action_id, count_action.cpu().float(), acted_id[1:].cpu(), action_acted[1:].cpu().float())
 
         if flags.use_fullobs_intrinsic:
             state_emb = state_embedding_model(batch, next_state=False)\
@@ -215,6 +222,10 @@ def train(flags):
         inverse_dynamics_model = MarioDoomInverseDynamicsNet(env.action_space.n)\
             .to(device=flags.device) 
 
+    if flags.histogram_length:
+        action_hist = WindowedHisto(env.action_space.n, flags.histogram_length)
+    else:
+        action_hist = FlatHisto(env.action_space.n)
 
     buffers = create_buffers(env.observation_space.shape, model.num_actions, flags)
     
@@ -318,7 +329,7 @@ def train(flags):
             stats = learn(model, learner_model, state_embedding_model, forward_dynamics_model, 
                           inverse_dynamics_model, batch, agent_state, optimizer, 
                           state_embedding_optimizer, forward_dynamics_optimizer, 
-                          inverse_dynamics_optimizer, scheduler, flags, frames=frames)
+                          inverse_dynamics_optimizer, scheduler, flags, frames=frames, action_hist=action_hist)
             timings.time('learn')
             with lock:
                 to_log = dict(frames=frames)
@@ -359,6 +370,18 @@ def train(flags):
             'scheduler_state_dict': scheduler.state_dict(),
             'flags': vars(flags),
         }, checkpointpath)
+
+        # Action histogram logger
+        action_hist_path = os.path.expandvars(
+            os.path.expanduser('%s/%s/%s' % (flags.savedir, flags.xpid,
+                                             'action_hist.tar')))
+        try:
+            action_hist_list = torch.load(action_hist_path)
+        except FileNotFoundError:
+            action_hist_list = []
+
+        action_hist_list.append(action_hist.return_full_hist())
+        torch.save(action_hist_list, action_hist_path)
 
     timer = timeit.default_timer
     try:
@@ -410,7 +433,7 @@ def train(flags):
         raise e
     else:
         for thread in threads:
-            thread.join()
+            thread.join(timeout=1)
         log.info('Learning finished after %d frames.', frames)
         
     finally:
@@ -420,4 +443,4 @@ def train(flags):
             actor.join(timeout=1)
     checkpoint(frames)
     plogger.close()
-
+    quit()

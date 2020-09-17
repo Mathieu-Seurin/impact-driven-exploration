@@ -252,9 +252,13 @@ def act(i: int, free_queue: mp.SimpleQueue, full_queue: mp.SimpleQueue,
                     train_state_count_dict[train_state_key] += 1
                 else:
                     train_state_count_dict.update({train_state_key: 1})
+
+                if flags.normal_count:
+                    state_count = train_state_count_dict.get(train_state_key)
+                else:
+                    state_count = np.sqrt(train_state_count_dict.get(train_state_key))
                 buffers['train_state_count'][index][t + 1, ...] = \
-                    torch.tensor(1 / np.sqrt(train_state_count_dict.get(train_state_key)))
-                    #TODO Maybe modify sqrt here ============
+                    torch.tensor(1 / state_count)
 
                 timings.time('write')
             full_queue.put(index)

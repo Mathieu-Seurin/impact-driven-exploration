@@ -28,6 +28,7 @@ import src.losses as losses
 
 from src.env_utils import FrameStack
 from src.utils import get_batch, log, create_env, create_buffers, act
+from src.action_hist import FlatHisto, WindowedHisto
 
 MinigridPolicyNet = models.MinigridPolicyNet
 MinigridStateEmbeddingNet = models.MinigridStateEmbeddingNet
@@ -48,6 +49,7 @@ def learn(actor_model,
           predictor_optimizer,
           scheduler,
           flags,
+          action_hist,
           frames=None,
           lock=threading.Lock()):
     """Performs a learning (optimization) step."""
@@ -60,6 +62,11 @@ def learn(actor_model,
         else:
             random_embedding = random_target_network(batch['frame'][1:].to(device=flags.device))
             predicted_embedding = predictor_network(batch['frame'][1:].to(device=flags.device))
+
+        # Saving action histogram, to visualize but NOT nudging it
+        action_id, count_action = torch.unique(batch["action"].flatten(), return_counts=True)
+        acted_id, action_acted = torch.unique((batch["action"] + 1) * batch["action_acted"] - 1, return_counts=True)
+        action_hist.add(action_id, count_action.cpu().float(), acted_id[1:].cpu(), action_acted[1:].cpu().float())
 
         intrinsic_rewards = torch.norm(predicted_embedding.detach() - random_embedding.detach(), dim=2, p=2)
 
@@ -220,6 +227,11 @@ def train(flags):
         learner_model = MarioDoomPolicyNet(env.observation_space.shape, env.action_space.n)\
             .to(device=flags.device)
 
+    if flags.histogram_length:
+        action_hist = WindowedHisto(env.action_space.n, flags.histogram_length)
+    else:
+        action_hist = FlatHisto(env.action_space.n)
+
     optimizer = torch.optim.RMSprop(
         learner_model.parameters(),
         lr=flags.learning_rate,
@@ -268,7 +280,7 @@ def train(flags):
                 initial_agent_state_buffers, flags, timings)
             stats = learn(model, learner_model, random_target_network, predictor_network,
                           batch, agent_state, optimizer, predictor_optimizer, scheduler, 
-                          flags, frames=frames)
+                          flags, frames=frames, action_hist=action_hist)
             timings.time('learn')
             with lock:
                 to_log = dict(frames=frames)
@@ -305,6 +317,19 @@ def train(flags):
             'scheduler_state_dict': scheduler.state_dict(),
             'flags': vars(flags),
         }, checkpointpath)
+
+        # Action histogram logger
+        action_hist_path = os.path.expandvars(
+            os.path.expanduser('%s/%s/%s' % (flags.savedir, flags.xpid,
+                                             'action_hist.tar')))
+        try:
+            action_hist_list = torch.load(action_hist_path)
+        except FileNotFoundError:
+            action_hist_list = []
+
+        action_hist_list.append(action_hist.return_full_hist())
+        torch.save(action_hist_list, action_hist_path)
+
 
     timer = timeit.default_timer
     try:
@@ -359,6 +384,11 @@ def train(flags):
         for actor in actor_processes:
             actor.join(timeout=1)
 
+    log.info("Before checkpointing")
     checkpoint(frames)
+    log.info("After checkpointing")
     plogger.close()
+    log.info("After logging")
+    quit()
+
 

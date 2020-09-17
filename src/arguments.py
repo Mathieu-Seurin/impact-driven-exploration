@@ -92,7 +92,8 @@ parser.add_argument('--change_treshold', default=-1, type=float,
                     help="Minimum change in representation to consider the action as useful")
 parser.add_argument('--histogram_length', default=0, type=float,
                     help="If you want a windowed histogram for action-shift, change length")
-
+parser.add_argument('--normal_count', action="store_true",
+                    help="State count are scaled by sqrt, remove sqrt with this option")
 
 # Singleton Environments.
 parser.add_argument('--fix_seed', action='store_true',
