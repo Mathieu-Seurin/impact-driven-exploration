@@ -47,6 +47,7 @@ def learn(actor_model,
           scheduler,
           flags,
           frames=None,
+          position_count=None,
           state_embedding_model=None,
           forward_dynamics_model=None,
           inverse_dynamics_model=None,
@@ -61,6 +62,9 @@ def learn(actor_model,
         count_rewards = batch['episode_state_count'][1:].float().to(device=flags.device)
 
         action_id, count_action = torch.unique(batch["action"].flatten(), return_counts=True)
+
+        # Store position id
+
 
         if state_embedding_model:
             current_state_embedding = state_embedding_model(batch['partial_obs'][:-1].to(device=flags.device))
@@ -360,6 +364,7 @@ def train(flags):
                           scheduler=scheduler,
                           flags=flags,
                           frames=frames,
+                          position_count=position_count,
                           state_embedding_model=state_embedding_model,
                           forward_dynamics_model=forward_dynamics_model,
                           inverse_dynamics_model=inverse_dynamics_model,
@@ -407,13 +412,13 @@ def train(flags):
             #'action_distribution_optimizer_state_dict': action_distribution_optimizer.state_dict(),
             # 'action_distribution_model_state_dict': action_distribution_model.state_dict(),
         }, checkpointpath)
-
         try:
             action_hist_list = torch.load(action_hist_path)
         except FileNotFoundError:
             action_hist_list = []
 
         action_hist_list.append(action_hist.return_full_hist())
+        position_count = dict()
         torch.save(action_hist_list, action_hist_path)
 
 
@@ -470,7 +475,7 @@ def train(flags):
         raise e
     else:
         for thread in threads:
-            thread.join()
+            thread.join(timeout=1)
         log.info('Learning finished after %d frames.', frames)
 
     finally:
@@ -478,6 +483,7 @@ def train(flags):
             free_queue.put(None)  # When an actor receives None in its free_queue, it stops.
         for actor in actor_processes:
             actor.join(timeout=1)
+
     checkpoint(frames)
     plogger.close()
-
+    quit()

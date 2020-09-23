@@ -16,7 +16,8 @@ import numpy as np
 
 from src.core import prof
 from src.env_utils import FrameStack, Environment, VizdoomSparseWrapper,\
-    Minigrid2Image, ActionActedWrapper, VizdoomNormRewardWrapper, NoisyBackgroundWrapper, NoisyWallWrapper
+    Minigrid2Image, ActionActedWrapper, VizdoomNormRewardWrapper, NoisyBackgroundWrapper, \
+    NoisyWallWrapper
 from src import atari_wrappers as atari_wrappers
 
 from gym_minigrid import wrappers as wrappers
@@ -138,6 +139,7 @@ def create_buffers(obs_shape, num_actions, flags) -> Buffers:
         partial_obs=dict(size=(T + 1, 7, 7, 3), dtype=torch.uint8),
         episode_state_count=dict(size=(T + 1, ), dtype=torch.float32),
         train_state_count=dict(size=(T + 1, ), dtype=torch.float32),
+        agent_position=dict(size=(T + 1, 2), dtype=torch.float32),
     )
     buffers: Buffers = {key: [] for key in specs}
     for _ in range(flags.num_buffers):
@@ -197,8 +199,14 @@ def act(i: int, free_queue: mp.SimpleQueue, full_queue: mp.SimpleQueue,
                 episode_state_count_dict[episode_state_key] += 1
             else:
                 episode_state_count_dict.update({episode_state_key: 1})
-            buffers['episode_state_count'][index][0, ...] = \
-                torch.tensor(1 / np.sqrt(episode_state_count_dict.get(episode_state_key)))
+
+            if flags.normal_count:
+                buffers['episode_state_count'][index][0, ...] = \
+                    torch.tensor(1 / episode_state_count_dict.get(episode_state_key))
+            else:
+                buffers['episode_state_count'][index][0, ...] = \
+                    torch.tensor(1 / np.sqrt(episode_state_count_dict.get(episode_state_key)))
+
             
             # Reset the episode state counts when the episode is over
             if env_output['done'][0][0]:
@@ -211,8 +219,13 @@ def act(i: int, free_queue: mp.SimpleQueue, full_queue: mp.SimpleQueue,
                 train_state_count_dict[train_state_key] += 1
             else:
                 train_state_count_dict.update({train_state_key: 1})
-            buffers['train_state_count'][index][0, ...] = \
-                torch.tensor(1 / np.sqrt(train_state_count_dict.get(train_state_key)))
+
+            if flags.normal_count:
+                buffers['train_state_count'][index][0, ...] = \
+                    torch.tensor(1 / train_state_count_dict.get(train_state_key))
+            else:
+                buffers['train_state_count'][index][0, ...] = \
+                    torch.tensor(1 / np.sqrt(train_state_count_dict.get(train_state_key)))
 
             # Do new rollout
             for t in range(flags.unroll_length):
@@ -239,8 +252,13 @@ def act(i: int, free_queue: mp.SimpleQueue, full_queue: mp.SimpleQueue,
                    episode_state_count_dict[episode_state_key] += 1
                 else:
                     episode_state_count_dict.update({episode_state_key: 1})
-                buffers['episode_state_count'][index][t + 1, ...] = \
-                    torch.tensor(1 / np.sqrt(episode_state_count_dict.get(episode_state_key)))
+
+                if flags.normal_count:
+                    buffers['episode_state_count'][index][t + 1, ...] = \
+                        torch.tensor(1 / episode_state_count_dict.get(episode_state_key))
+                else:
+                    buffers['episode_state_count'][index][t + 1, ...] = \
+                        torch.tensor(1 / np.sqrt(episode_state_count_dict.get(episode_state_key)))
 
                 # Reset the episode state counts when the episode is over
                 if env_output['done'][0][0]:

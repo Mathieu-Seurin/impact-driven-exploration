@@ -18,7 +18,7 @@ import cv2
 import torch
 
 import vizdoomgym
-from src.env_utils import ActionActedWrapper, Minigrid2Image, NoisyBackgroundWrapper, Environment
+from src.env_utils import ActionActedWrapper, Minigrid2Image, NoisyBackgroundWrapper, Environment, PlayGround
 
 import matplotlib.pyplot as plt
 import seaborn as sns
@@ -26,7 +26,7 @@ import seaborn as sns
 from src import models
 
 
-class PlayGround(MiniGridEnv):
+class TwoCorridor(MiniGridEnv):
     def __init__(self,
                  size=8,
                  agent_start_pos=(1, 1),
@@ -59,8 +59,6 @@ class PlayGround(MiniGridEnv):
         for i in range(6):
             self.put_obj(Wall(), 3, i + 1)
 
-
-
         self.put_obj(Door('blue'), 3, 5)
 
         self.put_obj(Ball('red'), 4, 1)
@@ -76,6 +74,7 @@ class PlayGround(MiniGridEnv):
             self.place_agent()
 
         self.mission = "get to the green goal square"
+
 
 
 def get_img_from_fig(fig, dpi=180):
@@ -201,7 +200,8 @@ args = parser.parse_args()
 
 
 if "MiniGrid" in args.env:
-    env = ActionActedWrapper(Minigrid2Image(PlayGround(8)))
+    # env = ActionActedWrapper(Minigrid2Image(TwoCorridor(8)))
+    env = ActionActedWrapper(Minigrid2Image(PlayGround(16, agent_start_pos=(8,8))))
     env = Environment(env)
 else:
     raise NotImplementedError("Minigrid only is available")

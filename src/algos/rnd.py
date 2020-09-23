@@ -60,8 +60,8 @@ def learn(actor_model,
             predicted_embedding = predictor_network(batch, next_state=True)\
                     .reshape(flags.unroll_length, flags.batch_size, 128)
         else:
-            random_embedding = random_target_network(batch['frame'][1:].to(device=flags.device))
-            predicted_embedding = predictor_network(batch['frame'][1:].to(device=flags.device))
+            random_embedding = random_target_network(batch['partial_obs'][1:].to(device=flags.device))
+            predicted_embedding = predictor_network(batch['partial_obs'][1:].to(device=flags.device))
 
         # Saving action histogram, to visualize but NOT nudging it
         action_id, count_action = torch.unique(batch["action"].flatten(), return_counts=True)
@@ -376,7 +376,7 @@ def train(flags):
         return  
     else:
         for thread in threads:
-            thread.join()
+            thread.join(timeout=1)
         log.info('Learning finished after %d frames.', frames)
     finally:
         for _ in range(flags.num_actors):

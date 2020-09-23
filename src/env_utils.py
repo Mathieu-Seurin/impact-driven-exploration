@@ -9,7 +9,7 @@ import torch
 from collections import deque, defaultdict
 from gym import spaces
 import numpy as np
-from gym_minigrid.minigrid import OBJECT_TO_IDX, COLOR_TO_IDX
+from gym_minigrid.minigrid import OBJECT_TO_IDX, COLOR_TO_IDX, MiniGridEnv, Ball, Key, Box, Grid
 
 from gym_minigrid.envs import MultiRoomEnv
 from gym_minigrid.register import register
@@ -65,7 +65,6 @@ class VizdoomSparseWrapper(gym.Wrapper):
             reward = 0
 
         return frame, reward, done, info
-
 
 class ActionActedWrapper(gym.Wrapper):
     def __init__(self, env):
@@ -147,7 +146,11 @@ class Environment:
         if self.gym_env.env.env.carrying:
             carried_col, carried_obj = torch.LongTensor([[COLOR_TO_IDX[self.gym_env.env.env.carrying.color]]]), torch.LongTensor([[OBJECT_TO_IDX[self.gym_env.env.env.carrying.type]]])
         else:
-            carried_col, carried_obj = torch.LongTensor([[5]]), torch.LongTensor([[1]])   
+            carried_col, carried_obj = torch.LongTensor([[5]]), torch.LongTensor([[1]])
+
+        # Add agent position to gather stats
+        agent_position = self.gym_env.unwrapped.agent_pos if hasattr(self.gym_env.unwrapped, "agent_pos") else np.zeros(2)
+        agent_position = torch.LongTensor(agent_position)
 
         return dict(
             frame=initial_frame,
@@ -160,6 +163,7 @@ class Environment:
             carried_obj=carried_obj,
             partial_obs=partial_obs,
             action_acted=initial_action_acted,
+            agent_position=agent_position
         )
         
     def step(self, action):
@@ -195,7 +199,10 @@ class Environment:
         if self.gym_env.env.env.carrying:
             carried_col, carried_obj = torch.LongTensor([[COLOR_TO_IDX[self.gym_env.env.env.carrying.color]]]), torch.LongTensor([[OBJECT_TO_IDX[self.gym_env.env.env.carrying.type]]])
         else:
-            carried_col, carried_obj = torch.LongTensor([[5]]), torch.LongTensor([[1]])   
+            carried_col, carried_obj = torch.LongTensor([[5]]), torch.LongTensor([[1]])
+
+        agent_position = self.gym_env.unwrapped.agent_pos if hasattr(self.gym_env.unwrapped, "agent_pos") else np.zeros(2)
+        agent_position = torch.LongTensor(agent_position)
 
         return dict(
             frame=frame,
@@ -208,6 +215,7 @@ class Environment:
             carried_obj = carried_obj, 
             partial_obs=partial_obs,
             action_acted=action_acted,
+            agent_position=agent_position
             )
 
     def get_full_obs(self):
@@ -366,13 +374,77 @@ class MultiRoomEnvN7S4(MultiRoomEnv):
         )
 
 
-class MultiRoomEnvN10S10(MultiRoomEnv):
+class MultiRoomEnvN12S10(MultiRoomEnv):
     def __init__(self):
         super().__init__(
-            minNumRooms=10,
-            maxNumRooms=10,
+            minNumRooms=12,
+            maxNumRooms=12,
             maxRoomSize=10
         )
+
+def rand_color():
+    return np.random.choice(list(COLOR_TO_IDX.keys()))
+class PlayGround(MiniGridEnv):
+    def __init__(self,
+                 size=16,
+                 agent_start_pos=(8, 8),
+                 agent_start_dir=0,
+                 ):
+
+        self.agent_start_pos = agent_start_pos
+        self.agent_start_dir = agent_start_dir
+
+        super().__init__(
+            grid_size=size,
+            max_steps=4 * size * size,
+            # Set this to True for maximum speed
+            see_through_walls=True
+        )
+
+    def _gen_grid(self, width, height):
+        self.grid = Grid(width, height)
+        # Generate the surrounding walls
+        self.grid.wall_rect(0, 0, width, height)
+
+        # Place a goal square in the bottom-right corner
+        # self.put_obj(Goal(), width - 2, height - 2)
+
+        self.put_obj(Ball(rand_color()), 2, 1)
+
+        self.put_obj(Ball(rand_color()), 4, 1)
+        self.put_obj(Ball(rand_color()), 4, 1)
+        self.put_obj(Key(rand_color()), 5, 2)
+        self.put_obj(Box(rand_color()), 4, 3)
+        self.put_obj(Ball(rand_color()), 4, 4)
+
+        self.put_obj(Ball(rand_color()), 12, 2)
+
+        self.put_obj(Ball(rand_color()), 14, 1)
+        self.put_obj(Key(rand_color()), 14, 2)
+        self.put_obj(Key(rand_color()), 11, 2)
+        self.put_obj(Box(rand_color()), 14, 3)
+        self.put_obj(Ball(rand_color()), 13, 1)
+
+        self.put_obj(Key(rand_color()), 3, 11)
+        self.put_obj(Ball(rand_color()), 5, 12)
+        self.put_obj(Key(rand_color()), 2, 14)
+        self.put_obj(Box(rand_color()), 3, 14)
+        self.put_obj(Ball(rand_color()), 5, 13)
+
+
+        self.put_obj(Key(rand_color()), 13, 13)
+        self.put_obj(Ball(rand_color()), 12, 13)
+
+
+        # Place the agent
+        if self.agent_start_pos is not None:
+            self.agent_pos = self.agent_start_pos
+            self.agent_dir = self.agent_start_dir
+        else:
+            self.place_agent()
+
+        self.mission = "get to the green goal square"
+
 
 register(
     id='MiniGrid-MultiRoom-N7-S4-v0',
@@ -380,6 +452,11 @@ register(
 )
 
 register(
-    id='MiniGrid-MultiRoom-N10-S10-v0',
-    entry_point='src.env_utils:MultiRoomEnvN10S10'
+    id='MiniGrid-MultiRoom-N12-S10-v0',
+    entry_point='src.env_utils:MultiRoomEnvN12S10'
+)
+
+register(
+    id='MiniGrid-PlayGround-v0',
+    entry_point='src.env_utils:PlayGround'
 )
