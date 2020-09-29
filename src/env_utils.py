@@ -373,6 +373,13 @@ class MultiRoomEnvN7S4(MultiRoomEnv):
             maxRoomSize=4
         )
 
+class MultiRoomEnvN10S4(MultiRoomEnv):
+    def __init__(self):
+        super().__init__(
+            minNumRooms=10,
+            maxNumRooms=10,
+            maxRoomSize=4
+        )
 
 class MultiRoomEnvN12S10(MultiRoomEnv):
     def __init__(self):
@@ -382,15 +389,23 @@ class MultiRoomEnvN12S10(MultiRoomEnv):
             maxRoomSize=10
         )
 
+class MultiRoomEnvN10S10(MultiRoomEnv):
+    def __init__(self):
+        super().__init__(
+            minNumRooms=10,
+            maxNumRooms=10,
+            maxRoomSize=10
+        )
+
 def rand_color():
     return np.random.choice(list(COLOR_TO_IDX.keys()))
+
 class PlayGround(MiniGridEnv):
     def __init__(self,
                  size=16,
                  agent_start_pos=(8, 8),
                  agent_start_dir=0,
                  ):
-
         self.agent_start_pos = agent_start_pos
         self.agent_start_dir = agent_start_dir
 
@@ -446,6 +461,10 @@ class PlayGround(MiniGridEnv):
         self.mission = "get to the green goal square"
 
 
+class ObstructedLongCorridor(MiniGridEnv):
+    pass
+
+
 register(
     id='MiniGrid-MultiRoom-N7-S4-v0',
     entry_point='src.env_utils:MultiRoomEnvN7S4'
@@ -454,6 +473,16 @@ register(
 register(
     id='MiniGrid-MultiRoom-N12-S10-v0',
     entry_point='src.env_utils:MultiRoomEnvN12S10'
+)
+
+register(
+    id='MiniGrid-MultiRoom-N10-S10-v0',
+    entry_point='src.env_utils:MultiRoomEnvN10S10'
+)
+
+register(
+    id='MiniGrid-MultiRoom-N10-S4-v0',
+    entry_point='src.env_utils:MultiRoomEnvN10S10'
 )
 
 register(

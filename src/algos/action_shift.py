@@ -64,7 +64,10 @@ def learn(actor_model,
         action_id, count_action = torch.unique(batch["action"].flatten(), return_counts=True)
 
         # Store position id
-
+        # position_coord, position_counts = torch.unique(batch["agent_position"].view(202, -1), return_counts=True, dim=0)
+        # for i, coord  in enumerate(position_coord):
+        #     coord = tuple(coord[:].cpu().numpy())
+        #     position_count[coord] = position_count.get(coord, 0) + position_counts[i].item()
 
         if state_embedding_model:
             current_state_embedding = state_embedding_model(batch['partial_obs'][:-1].to(device=flags.device))
@@ -270,6 +273,8 @@ def train(flags):
 
     episode_state_count_dict = dict()
     train_state_count_dict = dict()
+    position_count = dict()
+
     for i in range(flags.num_actors):
         actor = ctx.Process(
             target=act,
@@ -418,7 +423,6 @@ def train(flags):
             action_hist_list = []
 
         action_hist_list.append(action_hist.return_full_hist())
-        position_count = dict()
         torch.save(action_hist_list, action_hist_path)
 
 

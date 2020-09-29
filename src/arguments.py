@@ -92,6 +92,8 @@ parser.add_argument('--change_treshold', default=-1, type=float,
                     help="Minimum change in representation to consider the action as useful")
 parser.add_argument('--histogram_length', default=0, type=float,
                     help="If you want a windowed histogram for action-shift, change length")
+parser.add_argument('--ride_scaling', default=0.1, type=float,
+                    help="Using hybrid architecture, ride reward compared to action-shift")
 parser.add_argument('--normal_count', action="store_true",
                     help="State count are scaled by sqrt, remove sqrt with this option")
 
@@ -109,7 +111,9 @@ parser.add_argument('--noisy_wall', action='store_true',
 
 # Training Models.
 parser.add_argument('--model', default='vanilla',
-                    choices=['vanilla', 'count', 'curiosity', 'rnd', 'ride', 'no-episodic-counts', 'only-episodic-counts', 'action-shift'],
+                    choices=['vanilla', 'count', 'curiosity', 'rnd', 'ride',
+                             'no-episodic-counts', 'only-episodic-counts',
+                             'action-shift', 'hybrid'],
                     help='Model used for training the agent.')
 
 # Baselines for AMIGo paper.

@@ -169,7 +169,8 @@ def train(flags):
             target=act,
             args=(i, free_queue, full_queue, model, buffers, 
                 episode_state_count_dict, train_state_count_dict, 
-                initial_agent_state_buffers, flags))
+                initial_agent_state_buffers, flags),
+            daemon=True)
         actor.start()
         actor_processes.append(actor)
 
@@ -269,7 +270,8 @@ def train(flags):
                         target=act,
                         args=(actor_num, free_queue, full_queue, model, buffers,
                               episode_state_count_dict, train_state_count_dict,
-                              initial_agent_state_buffers, flags))
+                              initial_agent_state_buffers, flags),
+                        daemon=True)
                     new_actor.start()
                     add_actor.append([actor_num, new_actor])
 
@@ -299,7 +301,7 @@ def train(flags):
         return  
     else:
         for thread in threads:
-            thread.join()
+            thread.join(timeout=1)
         log.info('Learning finished after %d frames.', frames)
         
     finally:
@@ -309,4 +311,5 @@ def train(flags):
             actor.join(timeout=1)
     checkpoint(frames)
     plogger.close()
+    quit()
 

@@ -66,27 +66,36 @@ def learn(actor_model,
                                    dtype=torch.float32).to(device=flags.device)
         count_rewards = batch['episode_state_count'][1:].float().to(device=flags.device)
 
-        # Saving action histogram, to visualize but NOT nudging it
-        action_id, count_action = torch.unique(batch["action"].flatten(), return_counts=True)
-        acted_id, action_acted = torch.unique((batch["action"] + 1) * batch["action_acted"] - 1, return_counts=True)
-        action_hist.add(action_id, count_action.cpu().float(), acted_id[1:].cpu(), action_acted[1:].cpu().float())
-
-        if flags.use_fullobs_intrinsic:
-            state_emb = state_embedding_model(batch, next_state=False) \
-                .reshape(flags.unroll_length, flags.batch_size, 128)
-            next_state_emb = state_embedding_model(batch, next_state=True) \
-                .reshape(flags.unroll_length, flags.batch_size, 128)
-        else:
-            state_emb = state_embedding_model(batch['partial_obs'][:-1].to(device=flags.device))
-            next_state_emb = state_embedding_model(batch['partial_obs'][1:].to(device=flags.device))
+        # ======= Ride rewards ======
+        state_emb = state_embedding_model(batch['partial_obs'][:-1].to(device=flags.device))
+        next_state_emb = state_embedding_model(batch['partial_obs'][1:].to(device=flags.device))
 
         pred_next_state_emb = forward_dynamics_model(
             state_emb, batch['action'][1:].to(device=flags.device))
         pred_actions = inverse_dynamics_model(state_emb, next_state_emb)
 
-        control_rewards = torch.norm(next_state_emb - state_emb, dim=2, p=2)
+        ride_rewards = torch.norm(next_state_emb - state_emb, dim=2, p=2) * count_rewards
 
-        intrinsic_rewards = count_rewards * control_rewards
+        # ======= Action shift ======
+        action_id, count_action = torch.unique(batch["action"].flatten(), return_counts=True)
+        acted_id, action_acted = torch.unique((batch["action"] + 1) * batch["action_acted"] - 1, return_counts=True)
+        batch_action_acted = batch["action_acted"][:-1].byte()
+
+        action_hist.add(action_id, count_action.cpu().float(), acted_id[1:].cpu(), action_acted[1:].cpu().float())
+
+        action_rewards = torch.zeros_like(batch["action"][:-1]).float()
+        acted_ratio = action_hist.usage_ratio()
+
+        reward_for_an_action = torch.exp(- acted_ratio * flags.action_dist_decay_coef)
+        reward_for_an_action[acted_ratio == 1] = 0
+        reward_for_an_action[torch.isnan(reward_for_an_action)] = 0
+
+        assert torch.all(reward_for_an_action >= 0), "Problem, reward should only be positive"
+        for id in action_id:
+            action_rewards[(batch["action"][:-1] == id.item()) & batch_action_acted] = reward_for_an_action[id]
+
+        # ======== Combination of both rewards
+        intrinsic_rewards = (ride_rewards * flags.ride_scaling + action_rewards)
 
         intrinsic_reward_coef = flags.intrinsic_reward_coef
         intrinsic_rewards *= intrinsic_reward_coef
@@ -137,6 +146,7 @@ def learn(actor_model,
                      forward_dynamics_loss + inverse_dynamics_loss
 
         episode_returns = batch['episode_return'][batch['done']]
+
         stats = {
             'mean_episode_return': torch.mean(episode_returns).item(),
             'total_loss': total_loss.item(),
@@ -146,7 +156,8 @@ def learn(actor_model,
             'mean_rewards': torch.mean(rewards).item(),
             'mean_intrinsic_rewards': torch.mean(intrinsic_rewards).item(),
             'mean_total_rewards': torch.mean(total_rewards).item(),
-            'mean_control_rewards': torch.mean(control_rewards).item(),
+            'mean_ride_rewards': torch.mean(ride_rewards).item(),
+            'mean_action_rewards': torch.mean(action_rewards).item(),
             'mean_count_rewards': torch.mean(count_rewards).item(),
             'forward_dynamics_loss': forward_dynamics_loss.item(),
             'inverse_dynamics_loss': inverse_dynamics_loss.item(),
