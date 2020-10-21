@@ -74,7 +74,7 @@ def learn(actor_model,
             state_emb, batch['action'][1:].to(device=flags.device))
         pred_actions = inverse_dynamics_model(state_emb, next_state_emb)
 
-        ride_rewards = torch.norm(next_state_emb - state_emb, dim=2, p=2) * count_rewards
+        ride_rewards = torch.norm(next_state_emb - state_emb, dim=2, p=2)
 
         # ======= Action shift ======
         action_id, count_action = torch.unique(batch["action"].flatten(), return_counts=True)
@@ -93,9 +93,9 @@ def learn(actor_model,
         assert torch.all(reward_for_an_action >= 0), "Problem, reward should only be positive"
         for id in action_id:
             action_rewards[(batch["action"][:-1] == id.item()) & batch_action_acted] = reward_for_an_action[id]
-
+            
         # ======== Combination of both rewards
-        intrinsic_rewards = (ride_rewards * flags.ride_scaling + action_rewards)
+        intrinsic_rewards = (ride_rewards * flags.ride_scaling + action_rewards) * count_rewards
 
         intrinsic_reward_coef = flags.intrinsic_reward_coef
         intrinsic_rewards *= intrinsic_reward_coef
@@ -318,7 +318,8 @@ def train(flags):
         'mean_rewards',
         'mean_intrinsic_rewards',
         'mean_total_rewards',
-        'mean_control_rewards',
+        'mean_ride_rewards',
+        'mean_action_rewards',
         'mean_count_rewards',
         'forward_dynamics_loss',
         'inverse_dynamics_loss',
@@ -334,10 +335,22 @@ def train(flags):
             timings.reset()
             batch, agent_state = get_batch(free_queue, full_queue, buffers,
                                            initial_agent_state_buffers, flags, timings)
-            stats = learn(model, learner_model, state_embedding_model, forward_dynamics_model,
-                          inverse_dynamics_model, batch, agent_state, optimizer,
-                          state_embedding_optimizer, forward_dynamics_optimizer,
-                          inverse_dynamics_optimizer, scheduler, flags, frames=frames, action_hist=action_hist)
+            stats = learn(actor_model=model,
+                          model=learner_model,
+                          state_embedding_model=state_embedding_model,
+                          forward_dynamics_model=forward_dynamics_model,
+                          inverse_dynamics_model=inverse_dynamics_model,
+                          batch=batch,
+                          initial_agent_state=agent_state,
+                          optimizer=optimizer,
+                          state_embedding_optimizer=state_embedding_optimizer,
+                          forward_dynamics_optimizer=forward_dynamics_optimizer,
+                          inverse_dynamics_optimizer=inverse_dynamics_optimizer,
+                          scheduler=scheduler,
+                          flags=flags,
+                          frames=frames,
+                          action_hist=action_hist)
+
             timings.time('learn')
             with lock:
                 to_log = dict(frames=frames)

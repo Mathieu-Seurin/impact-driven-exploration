@@ -50,6 +50,7 @@ def learn(actor_model,
           scheduler,
           flags,
           action_hist,
+          position_count,
           frames=None,
           lock=threading.Lock()):
     """Performs a learning (optimization) step."""
@@ -62,6 +63,14 @@ def learn(actor_model,
         else:
             random_embedding = random_target_network(batch['partial_obs'][1:].to(device=flags.device))
             predicted_embedding = predictor_network(batch['partial_obs'][1:].to(device=flags.device))
+
+
+        # Saving position count, to produce heatmaps later
+        position_coord, position_counts = torch.unique(batch["agent_position"].view(-1, 2),
+                                                       return_counts=True, dim=0)
+        for i, coord in enumerate(position_coord):
+            coord = tuple(coord[:].cpu().numpy())
+            position_count[coord] = position_count.get(coord, 0) + position_counts[i].item()
 
         # Saving action histogram, to visualize but NOT nudging it
         action_id, count_action = torch.unique(batch["action"].flatten(), return_counts=True)
@@ -207,6 +216,8 @@ def train(flags):
 
     episode_state_count_dict = dict()
     train_state_count_dict = dict()
+    position_count = dict()
+
     for i in range(flags.num_actors):
         actor = ctx.Process(
             target=act,
@@ -281,7 +292,8 @@ def train(flags):
                 initial_agent_state_buffers, flags, timings)
             stats = learn(model, learner_model, random_target_network, predictor_network,
                           batch, agent_state, optimizer, predictor_optimizer, scheduler, 
-                          flags, frames=frames, action_hist=action_hist)
+                          flags, frames=frames, action_hist=action_hist, position_count=position_count)
+
             timings.time('learn')
             with lock:
                 to_log = dict(frames=frames)
@@ -316,6 +328,7 @@ def train(flags):
             'optimizer_state_dict': optimizer.state_dict(),
             'predictor_optimizer_state_dict': predictor_optimizer.state_dict(),
             'scheduler_state_dict': scheduler.state_dict(),
+            'position_count' : position_count,
             'flags': vars(flags),
         }, checkpointpath)
 
@@ -371,8 +384,8 @@ def train(flags):
 
             total_loss = stats.get('total_loss', float('inf'))
             if stats:
-                log.info('After %i frames: loss %f @ %.1f fps. Mean Return %.1f. \n Stats \n %s', \
-                        frames, total_loss, fps, stats['mean_episode_return'], pprint.pformat(stats))
+                log.info('After %i frames: loss %f @ %.1f fps. Mean Return %.1f. \n Stats \n %s',
+                         frames, total_loss, fps, stats['mean_episode_return'], pprint.pformat(stats))
 
     except KeyboardInterrupt:
         return  

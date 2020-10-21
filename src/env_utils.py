@@ -9,7 +9,8 @@ import torch
 from collections import deque, defaultdict
 from gym import spaces
 import numpy as np
-from gym_minigrid.minigrid import OBJECT_TO_IDX, COLOR_TO_IDX, MiniGridEnv, Ball, Key, Box, Grid
+from gym_minigrid.minigrid import OBJECT_TO_IDX, COLOR_TO_IDX, MiniGridEnv, Ball, Key, Box, Grid, Floor, Wall, Door
+from gym_minigrid.envs.obstructedmaze import ObstructedMaze_Full
 
 from gym_minigrid.envs import MultiRoomEnv
 from gym_minigrid.register import register
@@ -365,6 +366,225 @@ class LazyFrames(object):
         return self._force()[i]
 
 
+class LongCorridorObstructed(ObstructedMaze_Full):
+    def __init__(self, blocking=False, seed=None):
+        super().__init__((2, 1), True, blocking, 1, 4, seed)
+
+    def _gen_grid(self, width, height):
+        super()._gen_grid(width=width, height=height)
+
+        self.place_agent(0, 2)
+
+        current_room_pos = [0, 2]
+        self.remove_wall(*current_room_pos, 0)
+        self.change_floor_color(*self.compute_new_pos(*current_room_pos, 0))
+
+        self.remove_wall(*current_room_pos, 3)
+        new_pos = self.compute_new_pos(*current_room_pos, 3)
+        self.change_floor_color(*new_pos)
+
+        current_room_pos = new_pos
+
+        self.remove_wall(*current_room_pos, 3)
+        new_pos = self.compute_new_pos(*current_room_pos, 3)
+        self.change_floor_color(*new_pos)
+
+        current_room_pos = new_pos
+
+        self.remove_wall(*current_room_pos, 0)
+        new_pos = self.compute_new_pos(*current_room_pos, 0)
+        self.change_floor_color(*new_pos)
+
+        current_room_pos = new_pos
+        self.remove_wall(*current_room_pos, 1)
+        self.change_floor_color(*self.compute_new_pos(*current_room_pos, 1))
+
+        # current_room_pos = [1,1]
+        # self.change_floor_color(*self.compute_new_pos(*current_room_pos, 1))
+
+        # center_pos = [1, 1]
+        # forbidden_position = [(2, 2), (2, 1), (2, 0), (0, 2)]
+        # reach_center = False
+
+        # while not reach_center:
+        #     possible_room = [n for n, r in enumerate(self.get_room(*current_room_pos).neighbors) if r]
+        #     random_room = np.random.choice(possible_room)
+        #
+        #     new_pos = self.compute_new_pos(*current_room_pos, random_room)
+        #     if new_pos in forbidden_position:
+        #         continue
+        #
+        #     self.remove_wall(*current_room_pos, random_room)
+        #     current_room_pos = new_pos
+        #     reach_center = current_room_pos[0] == center_pos[0] and current_room_pos[1] == center_pos[1]
+        #     forbidden_position.append(new_pos)
+        #     self.change_floor_color(*new_pos)
+
+    def compute_new_pos(self, i, j, wall_idx):
+        if wall_idx == 0:
+            new_pos = i + 1, j
+        elif wall_idx == 1:
+            new_pos = i, j + 1
+        elif wall_idx == 2:
+            new_pos = i - 1, j
+        elif wall_idx == 3:
+            new_pos = i, j - 1
+        return new_pos
+
+    def change_floor_color(self, i, j):
+
+        current_r = self.get_room(i, j)
+        x, y = current_r.top
+        w, h = current_r.size
+
+        rand_color = np.random.choice(list(COLOR_TO_IDX.keys()))
+
+        for ii in range(1, w - 1):
+            for jj in range(1, h - 1):
+                self.grid.set(x + ii, y + jj, Floor(rand_color))
+
+    def remove_wall(self, i, j, wall_idx):
+        """
+        Remove a wall between two rooms
+        """
+
+        room = self.get_room(i, j)
+
+        assert wall_idx >= 0 and wall_idx < 4
+        assert room.doors[wall_idx] is None, "door exists on this wall"
+        assert room.neighbors[wall_idx], "invalid wall"
+
+        neighbor = room.neighbors[wall_idx]
+
+        tx, ty = room.top
+        w, h = room.size
+
+        # Ordering of walls is right, down, left, up
+        if wall_idx == 0:
+            p = np.random.randint(1, h - 1)
+            self.grid.set(tx + w - 1, ty + p, None)
+        elif wall_idx == 1:
+            p = np.random.randint(1, w - 1)
+            self.grid.set(tx + p, ty + h - 1, None)
+        elif wall_idx == 2:
+            p = np.random.randint(1, h - 1)
+            self.grid.set(tx, ty + p, None)
+        elif wall_idx == 3:
+            p = np.random.randint(1, w - 1)
+            self.grid.set(tx + p, ty, None)
+        else:
+            assert False, "invalid wall index"
+
+        # Mark the rooms as connected
+        room.doors[wall_idx] = True
+        neighbor.doors[(wall_idx + 2) % 4] = True
+
+class PlayGround(MiniGridEnv):
+    def __init__(self,
+                 size=16,
+                 agent_start_pos=(8, 8),
+                 agent_start_dir=None,
+                 ):
+        self.agent_start_pos = agent_start_pos
+        self.agent_start_dir = agent_start_dir
+
+        super().__init__(
+            grid_size=size,
+            max_steps=200,
+            # Set this to True for maximum speed
+            see_through_walls=True
+        )
+
+    def _gen_grid(self, width, height):
+        self.grid = Grid(width, height)
+        # Generate the surrounding walls
+        self.grid.wall_rect(0, 0, width, height)
+
+        # Place a goal square in the bottom-right corner
+        # self.put_obj(Goal(), width - 2, height - 2)
+        self.put_obj(Ball(rand_color()), 2, 1)
+
+        self.put_obj(Ball(rand_color()), 4, 1)
+        self.put_obj(Ball(rand_color()), 4, 1)
+        self.put_obj(Key(rand_color()), 5, 2)
+        self.put_obj(Box(rand_color()), 4, 3)
+        self.put_obj(Ball(rand_color()), 4, 4)
+
+        self.put_obj(Ball(rand_color()), 12, 2)
+
+        self.put_obj(Ball(rand_color()), 14, 1)
+        self.put_obj(Key(rand_color()), 14, 2)
+        self.put_obj(Key(rand_color()), 11, 2)
+        self.put_obj(Box(rand_color()), 14, 3)
+        self.put_obj(Ball(rand_color()), 13, 1)
+
+        self.put_obj(Key(rand_color()), 3, 11)
+        self.put_obj(Ball(rand_color()), 5, 12)
+        self.put_obj(Key(rand_color()), 2, 14)
+        self.put_obj(Box(rand_color()), 3, 14)
+        self.put_obj(Ball(rand_color()), 5, 13)
+
+
+        self.put_obj(Key(rand_color()), 13, 13)
+        self.put_obj(Ball(rand_color()), 12, 13)
+
+        # Place the agent
+        if self.agent_start_pos is not None:
+            self.agent_pos = self.agent_start_pos
+            self.agent_dir = np.random.randint(0,4)
+        else:
+            self.place_agent()
+
+        self.mission = "get to the green goal square"
+
+
+class PlayGround2(MiniGridEnv):
+    def __init__(self,
+                 size=8,
+                 agent_start_pos=(1, 1),
+                 agent_start_dir=0,
+                 ):
+
+        self.agent_start_pos = agent_start_pos
+        self.agent_start_dir = agent_start_dir
+
+        super().__init__(
+            grid_size=size,
+            max_steps=4 * size * size,
+            # Set this to True for maximum speed
+            see_through_walls=True
+        )
+
+    def _gen_grid(self, width, height):
+
+        self.grid = Grid(width, height)
+
+        # Generate the surrounding walls
+        self.grid.wall_rect(0, 0, width, height)
+
+        # Place a goal square in the bottom-right corner
+        # self.put_obj(Goal(), width - 2, height - 2)
+
+        for i in range(6):
+            self.put_obj(Wall(), 3, i + 1)
+
+        self.put_obj(Door('blue'), 3, 5)
+
+        self.put_obj(Ball('red'), 4, 1)
+        self.put_obj(Key('green'), 4, 2)
+        self.put_obj(Box('grey'), 4, 3)
+        self.put_obj(Ball('blue'), 4, 4)
+
+        # Place the agent
+        if self.agent_start_pos is not None:
+            self.agent_pos = self.agent_start_pos
+            self.agent_dir = self.agent_start_dir
+        else:
+            self.place_agent()
+
+        self.mission = "get to the green goal square"
+
+
 class MultiRoomEnvN7S4(MultiRoomEnv):
     def __init__(self):
         super().__init__(
@@ -397,72 +617,18 @@ class MultiRoomEnvN10S10(MultiRoomEnv):
             maxRoomSize=10
         )
 
-def rand_color():
-    return np.random.choice(list(COLOR_TO_IDX.keys()))
-
-class PlayGround(MiniGridEnv):
-    def __init__(self,
-                 size=16,
-                 agent_start_pos=(8, 8),
-                 agent_start_dir=0,
-                 ):
-        self.agent_start_pos = agent_start_pos
-        self.agent_start_dir = agent_start_dir
-
-        super().__init__(
-            grid_size=size,
-            max_steps=4 * size * size,
-            # Set this to True for maximum speed
-            see_through_walls=True
+class LongCorridorObstructedSimple(LongCorridorObstructed):
+    def __init__(self):
+        super().__init__(blocking=False
         )
 
-    def _gen_grid(self, width, height):
-        self.grid = Grid(width, height)
-        # Generate the surrounding walls
-        self.grid.wall_rect(0, 0, width, height)
+class LongCorridorObstructedBlocked(LongCorridorObstructed):
+    def __init__(self):
+        super().__init__(blocking=True
+        )
 
-        # Place a goal square in the bottom-right corner
-        # self.put_obj(Goal(), width - 2, height - 2)
-
-        self.put_obj(Ball(rand_color()), 2, 1)
-
-        self.put_obj(Ball(rand_color()), 4, 1)
-        self.put_obj(Ball(rand_color()), 4, 1)
-        self.put_obj(Key(rand_color()), 5, 2)
-        self.put_obj(Box(rand_color()), 4, 3)
-        self.put_obj(Ball(rand_color()), 4, 4)
-
-        self.put_obj(Ball(rand_color()), 12, 2)
-
-        self.put_obj(Ball(rand_color()), 14, 1)
-        self.put_obj(Key(rand_color()), 14, 2)
-        self.put_obj(Key(rand_color()), 11, 2)
-        self.put_obj(Box(rand_color()), 14, 3)
-        self.put_obj(Ball(rand_color()), 13, 1)
-
-        self.put_obj(Key(rand_color()), 3, 11)
-        self.put_obj(Ball(rand_color()), 5, 12)
-        self.put_obj(Key(rand_color()), 2, 14)
-        self.put_obj(Box(rand_color()), 3, 14)
-        self.put_obj(Ball(rand_color()), 5, 13)
-
-
-        self.put_obj(Key(rand_color()), 13, 13)
-        self.put_obj(Ball(rand_color()), 12, 13)
-
-
-        # Place the agent
-        if self.agent_start_pos is not None:
-            self.agent_pos = self.agent_start_pos
-            self.agent_dir = self.agent_start_dir
-        else:
-            self.place_agent()
-
-        self.mission = "get to the green goal square"
-
-
-class ObstructedLongCorridor(MiniGridEnv):
-    pass
+def rand_color():
+    return np.random.choice(list(COLOR_TO_IDX.keys()))
 
 
 register(
@@ -489,3 +655,15 @@ register(
     id='MiniGrid-PlayGround-v0',
     entry_point='src.env_utils:PlayGround'
 )
+
+register(
+    id='MiniGrid-LongObstructed-v0',
+    entry_point='src.env_utils:LongCorridorObstructedSimple'
+)
+
+register(
+    id='MiniGrid-LongObstructed-b-v0',
+    entry_point='src.env_utils:LongCorridorObstructedBlocked'
+)
+
+a = LongCorridorObstructed()

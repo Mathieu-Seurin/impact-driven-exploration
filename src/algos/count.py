@@ -27,6 +27,7 @@ import src.losses as losses
 
 from src.env_utils import FrameStack
 from src.utils import get_batch, log, create_env, create_buffers, act
+from src.action_hist import FlatHisto, WindowedHisto
 
 MinigridPolicyNet = models.MinigridPolicyNet
 MarioDoomPolicyNet = models.MarioDoomPolicyNet
@@ -40,11 +41,26 @@ def learn(actor_model,
           optimizer,
           scheduler,
           flags,
+          action_hist,
+          position_count,
           lock=threading.Lock()):
     """Performs a learning (optimization) step."""
     with lock:
         intrinsic_rewards = torch.ones((flags.unroll_length, flags.batch_size), 
             dtype=torch.float32).to(device=flags.device)
+
+        # Store position id
+        position_coord, position_counts = torch.unique(batch["agent_position"].view(-1, 2),
+                                                       return_counts=True, dim=0)
+
+        for i, coord in enumerate(position_coord):
+            coord = tuple(coord[:].cpu().numpy())
+            position_count[coord] = position_count.get(coord, 0) + position_counts[i].item()
+
+        # Saving action histogram, to visualize but NOT nudging it
+        action_id, count_action = torch.unique(batch["action"].flatten(), return_counts=True)
+        acted_id, action_acted = torch.unique((batch["action"] + 1) * batch["action_acted"] - 1, return_counts=True)
+        action_hist.add(action_id, count_action.cpu().float(), acted_id[1:].cpu(), action_acted[1:].cpu().float())
 
         intrinsic_rewards = batch['train_state_count'][1:].float().to(device=flags.device)
 
@@ -147,6 +163,10 @@ def train(flags):
         model = MarioDoomPolicyNet(env.observation_space.shape, env.action_space.n)
 
     buffers = create_buffers(env.observation_space.shape, model.num_actions, flags)
+    if flags.histogram_length:
+        action_hist = WindowedHisto(env.action_space.n, flags.histogram_length)
+    else:
+        action_hist = FlatHisto(env.action_space.n)
     
     model.share_memory()
 
@@ -164,6 +184,8 @@ def train(flags):
 
     episode_state_count_dict = dict()
     train_state_count_dict = dict()
+    position_count = dict()
+
     for i in range(flags.num_actors):
         actor = ctx.Process(
             target=act,
@@ -222,8 +244,11 @@ def train(flags):
             timings.reset()
             batch, agent_state = get_batch(free_queue, full_queue, buffers, 
                 initial_agent_state_buffers, flags, timings)
-            stats = learn(model, learner_model, batch, agent_state, 
-                optimizer, scheduler, flags)
+            stats = learn(model, learner_model, batch, agent_state,
+                          optimizer, scheduler, flags,
+                          position_count=position_count,
+                          action_hist=action_hist)
+
             timings.time('learn')
             with lock:
                 to_log = dict(frames=frames)
@@ -254,8 +279,21 @@ def train(flags):
             'model_state_dict': model.state_dict(),
             'optimizer_state_dict': optimizer.state_dict(),
             'scheduler_state_dict': scheduler.state_dict(),
+            'position_count': position_count,
             'flags': vars(flags),
         }, checkpointpath)
+
+        # Action histogram logger
+        action_hist_path = os.path.expandvars(
+            os.path.expanduser('%s/%s/%s' % (flags.savedir, flags.xpid,
+                                             'action_hist.tar')))
+        try:
+            action_hist_list = torch.load(action_hist_path)
+        except FileNotFoundError:
+            action_hist_list = []
+
+        action_hist_list.append(action_hist.return_full_hist())
+        torch.save(action_hist_list, action_hist_path)
 
     timer = timeit.default_timer
     try:

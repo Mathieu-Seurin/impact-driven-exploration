@@ -58,6 +58,7 @@ def learn(actor_model,
           scheduler,
           flags,
           action_hist,
+          position_count,
           frames=None,
           lock=threading.Lock()):
     """Performs a learning (optimization) step."""
@@ -65,6 +66,13 @@ def learn(actor_model,
         count_rewards = torch.ones((flags.unroll_length, flags.batch_size), 
             dtype=torch.float32).to(device=flags.device)
         count_rewards = batch['episode_state_count'][1:].float().to(device=flags.device)
+
+        # Saving position count, to produce heatmaps later
+        position_coord, position_counts = torch.unique(batch["agent_position"].view(-1, 2),
+                                                       return_counts=True, dim=0)
+        for i, coord in enumerate(position_coord):
+            coord = tuple(coord[:].cpu().numpy())
+            position_count[coord] = position_count.get(coord, 0) + position_counts[i].item()
 
         # Saving action histogram, to visualize but NOT nudging it
         action_id, count_action = torch.unique(batch["action"].flatten(), return_counts=True)
@@ -245,6 +253,8 @@ def train(flags):
     
     episode_state_count_dict = dict()
     train_state_count_dict = dict()
+    position_count = dict()
+
     for i in range(flags.num_actors):
         actor = ctx.Process(
             target=act,
@@ -329,7 +339,9 @@ def train(flags):
             stats = learn(model, learner_model, state_embedding_model, forward_dynamics_model, 
                           inverse_dynamics_model, batch, agent_state, optimizer, 
                           state_embedding_optimizer, forward_dynamics_optimizer, 
-                          inverse_dynamics_optimizer, scheduler, flags, frames=frames, action_hist=action_hist)
+                          inverse_dynamics_optimizer, scheduler, flags,
+                          frames=frames, action_hist=action_hist, position_count=position_count)
+
             timings.time('learn')
             with lock:
                 to_log = dict(frames=frames)
@@ -368,6 +380,7 @@ def train(flags):
             'forward_dynamics_optimizer_state_dict': forward_dynamics_optimizer.state_dict(),
             'inverse_dynamics_optimizer_state_dict': inverse_dynamics_optimizer.state_dict(),
             'scheduler_state_dict': scheduler.state_dict(),
+            'position_count' : position_count,
             'flags': vars(flags),
         }, checkpointpath)
 

@@ -44,8 +44,6 @@ is_minigrid = "MiniGrid" in args.env
 
 if is_minigrid:
     env = gym.make(args.env)
-    print(env)
-    print(env.unwrapped.grid)
     env = Minigrid2Image(env)
     if args.noisy_wall:
         env = NoisyWallWrapper(env)
@@ -85,6 +83,8 @@ model.train(False)
 if 'state_embedding_model_state_dict' in checkpoint:
     embedder_model.load_state_dict(checkpoint['state_embedding_model_state_dict'])
 
+print(env)
+print(env.unwrapped.grid)
 env = Environment(env, fix_seed=args.fix_seed, env_seed=args.env_seed)
 env_output = env.initial()
 print(env.gym_env)

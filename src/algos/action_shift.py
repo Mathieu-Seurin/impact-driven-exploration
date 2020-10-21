@@ -64,10 +64,12 @@ def learn(actor_model,
         action_id, count_action = torch.unique(batch["action"].flatten(), return_counts=True)
 
         # Store position id
-        # position_coord, position_counts = torch.unique(batch["agent_position"].view(202, -1), return_counts=True, dim=0)
-        # for i, coord  in enumerate(position_coord):
-        #     coord = tuple(coord[:].cpu().numpy())
-        #     position_count[coord] = position_count.get(coord, 0) + position_counts[i].item()
+        position_coord, position_counts = torch.unique(batch["agent_position"].view(-1, 2),
+                                                       return_counts=True, dim=0)
+
+        for i, coord  in enumerate(position_coord):
+            coord = tuple(coord[:].cpu().numpy())
+            position_count[coord] = position_count.get(coord, 0) + position_counts[i].item()
 
         if state_embedding_model:
             current_state_embedding = state_embedding_model(batch['partial_obs'][:-1].to(device=flags.device))
@@ -85,7 +87,6 @@ def learn(actor_model,
 
             inverse_dynamics_loss = flags.inverse_loss_coef * \
                                     losses.compute_inverse_dynamics_loss(pred_actions, batch['action'][1:])
-
 
         else:
             acted_id, action_acted = torch.unique((batch["action"] + 1) * batch["action_acted"] - 1, return_counts=True)
@@ -365,7 +366,7 @@ def train(flags):
                           action_hist=action_hist,
                           batch=batch,
                           initial_agent_state=agent_state,
-                          optimizer=optimizer, #action_distribution_optimizer,
+                          optimizer=optimizer,
                           scheduler=scheduler,
                           flags=flags,
                           frames=frames,
@@ -410,12 +411,11 @@ def train(flags):
 
         log.info('Saving checkpoint to %s', checkpointpath)
         torch.save({
+            'position_count': position_count,
             'model_state_dict': model.state_dict(),
             'optimizer_state_dict': optimizer.state_dict(),
             'scheduler_state_dict': scheduler.state_dict(),
             'flags': vars(flags),
-            #'action_distribution_optimizer_state_dict': action_distribution_optimizer.state_dict(),
-            # 'action_distribution_model_state_dict': action_distribution_model.state_dict(),
         }, checkpointpath)
         try:
             action_hist_list = torch.load(action_hist_path)

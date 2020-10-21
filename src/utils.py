@@ -18,6 +18,7 @@ from src.core import prof
 from src.env_utils import FrameStack, Environment, VizdoomSparseWrapper,\
     Minigrid2Image, ActionActedWrapper, VizdoomNormRewardWrapper, NoisyBackgroundWrapper, \
     NoisyWallWrapper
+
 from src import atari_wrappers as atari_wrappers
 
 from gym_minigrid import wrappers as wrappers
