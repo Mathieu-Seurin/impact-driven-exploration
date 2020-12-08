@@ -58,6 +58,7 @@ def learn(actor_model,
           scheduler,
           flags,
           action_hist,
+          position_count,
           frames=None,
           lock=threading.Lock()):
     """Performs a learning (optimization) step."""
@@ -65,6 +66,14 @@ def learn(actor_model,
         count_rewards = torch.ones((flags.unroll_length, flags.batch_size),
                                    dtype=torch.float32).to(device=flags.device)
         count_rewards = batch['episode_state_count'][1:].float().to(device=flags.device)
+
+        # Store position id
+        position_coord, position_counts = torch.unique(batch["agent_position"].view(-1, 2),
+                                                       return_counts=True, dim=0)
+
+        for i, coord in enumerate(position_coord):
+            coord = tuple(coord[:].cpu().numpy())
+            position_count[coord] = position_count.get(coord, 0) + position_counts[i].item()
 
         # ======= Ride rewards ======
         state_emb = state_embedding_model(batch['partial_obs'][:-1].to(device=flags.device))
@@ -255,6 +264,8 @@ def train(flags):
 
     episode_state_count_dict = dict()
     train_state_count_dict = dict()
+    position_count = dict()
+
     for i in range(flags.num_actors):
         actor = ctx.Process(
             target=act,
@@ -349,7 +360,8 @@ def train(flags):
                           scheduler=scheduler,
                           flags=flags,
                           frames=frames,
-                          action_hist=action_hist)
+                          action_hist=action_hist,
+                          position_count=position_count)
 
             timings.time('learn')
             with lock:
@@ -383,6 +395,7 @@ def train(flags):
             'state_embedding_model_state_dict': state_embedding_model.state_dict(),
             'forward_dynamics_model_state_dict': forward_dynamics_model.state_dict(),
             'inverse_dynamics_model_state_dict': inverse_dynamics_model.state_dict(),
+            'position_count': position_count,
             'optimizer_state_dict': optimizer.state_dict(),
             'state_embedding_optimizer_state_dict': state_embedding_optimizer.state_dict(),
             'forward_dynamics_optimizer_state_dict': forward_dynamics_optimizer.state_dict(),

@@ -10,6 +10,7 @@ import vizdoomgym
 import argparse
 from os import path
 import time
+from torch.distributions import Categorical
 
 parser = argparse.ArgumentParser(description='PyTorch Scalable Agent')
 parser.add_argument('--env', type=str, default='MiniGrid-ObstructedMaze-2Dlh-v0',
@@ -48,6 +49,9 @@ if is_minigrid:
     if args.noisy_wall:
         env = NoisyWallWrapper(env)
     env = ActionActedWrapper(env)
+
+    #env.unwrapped.max_steps=1000
+
 else:
     env = atari_wrappers.wrap_pytorch(
         atari_wrappers.wrap_deepmind(
@@ -103,8 +107,14 @@ if not args.stop_visu and is_minigrid:
 while True :
     model_output, agent_state = model(env_output, agent_state)
 
-    action = model_output["action"]
-    #action = torch.randint(low=0, high=env.gym_env.action_space.n, size=(1,))
+    # action = model_output["action"]
+    logits = model_output["policy_logits"]
+    #print(logits)
+    m = Categorical(logits=logits)
+    action = m.sample()
+
+    # action = torch.randint(low=0, high=env.gym_env.action_space.n, size=(1,))
+    # action = torch.tensor([0])
     env_output = env.step(action)
 
     next_state_embedding = embedder_model(env_output['frame'])
@@ -122,5 +132,5 @@ while True :
         w.show_img(rgb_arr)
 
     #print(env.gym_env)
-    time.sleep(0.01)
+    #time.sleep(0.001)
 
