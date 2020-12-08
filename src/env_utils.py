@@ -9,6 +9,7 @@ import torch
 from collections import deque, defaultdict
 from gym import spaces
 import numpy as np
+import gym_minigrid
 from gym_minigrid.minigrid import OBJECT_TO_IDX, COLOR_TO_IDX, MiniGridEnv, Ball, Key, Box, Grid, Floor, Wall, Door
 from gym_minigrid.envs.obstructedmaze import ObstructedMaze_Full
 
@@ -137,8 +138,8 @@ class Environment:
         initial_done = torch.ones(1, 1, dtype=torch.uint8)
         initial_action_acted = torch.ones(1, 1, dtype=torch.uint8)
 
-        if self.fix_seed:
-            self.gym_env.seed(seed=self.env_seed)
+        # if self.fix_seed:
+        self.gym_env.seed(seed=self.env_seed)
 
         observation, acted = self.gym_env.reset()
         initial_frame = _format_observation(observation)
@@ -168,6 +169,12 @@ class Environment:
         )
         
     def step(self, action):
+
+        oracle_acted_before = (self.gym_env.unwrapped.carrying,
+                               self.gym_env.unwrapped.agent_pos,
+                               self.gym_env.unwrapped.agent_dir,
+                               self.gym_env.unwrapped.grid.encode().copy())
+
         (frame, action_acted), reward, done, _ = self.gym_env.step(action.item())
 
         self.episode_step += 1
@@ -180,7 +187,7 @@ class Environment:
             self.episode_win[0][0] = 1 
         else:
             self.episode_win[0][0] = 0 
-        episode_win = self.episode_win 
+        episode_win = self.episode_win
         
         if done:
             if self.fix_seed:
@@ -193,7 +200,6 @@ class Environment:
         frame = _format_observation(frame)
         reward = torch.tensor(reward).view(1, 1)
         done = torch.tensor(done).view(1, 1)
-        action_acted = torch.tensor(action_acted).view(1, 1)
 
         partial_obs = _format_observation(self.get_partial_obs())
         
@@ -204,6 +210,34 @@ class Environment:
 
         agent_position = self.gym_env.unwrapped.agent_pos if hasattr(self.gym_env.unwrapped, "agent_pos") else np.zeros(2)
         agent_position = torch.LongTensor(agent_position)
+
+        oracle_acted_after = (self.gym_env.unwrapped.carrying,
+                              self.gym_env.unwrapped.agent_pos,
+                              self.gym_env.unwrapped.agent_dir,
+                              self.gym_env.unwrapped.grid.encode().copy())
+
+
+        oracle_acted = (np.any(oracle_acted_after[0] != oracle_acted_before[0]),
+                        np.any(oracle_acted_after[1] != oracle_acted_before[1]),
+                        np.any(oracle_acted_after[2] != oracle_acted_before[2]),
+                        np.any(oracle_acted_after[3] != oracle_acted_before[3])
+                        )
+
+        action_acted = any(oracle_acted)
+        action_acted = torch.tensor(action_acted).view(1, 1)
+        #
+        # if not action_acted: #any(oracle_acted) != action_acted:
+        #     #print(oracle_acted_after[3].encode(), oracle_acted_before[3].encode())
+        #     print("Oh no.")
+        #     print("Oracle :", any(oracle_acted))
+        #     print("Mine poor, useless :", any(action_acted))
+        #     print(action)
+        #     print("0", oracle_acted_before[0] != oracle_acted_after[0])
+        #     print("1", oracle_acted_before[1] != oracle_acted_after[1])
+        #     print("2", oracle_acted_before[2] != oracle_acted_after[2])
+        #     print("3", oracle_acted_before[3] != oracle_acted_after[3])
+        #
+            # input()
 
         return dict(
             frame=frame,
@@ -585,6 +619,68 @@ class PlayGround2(MiniGridEnv):
         self.mission = "get to the green goal square"
 
 
+class __BallPit(MultiRoomEnv):
+    def __init__(self, minNumRooms, maxNumRooms, maxRoomSize):
+        super().__init__(minNumRooms=minNumRooms,
+                         maxNumRooms=maxNumRooms,
+                         maxRoomSize=maxRoomSize)
+
+    def _gen_grid(self, width, height):
+
+        super()._gen_grid(width, height)
+
+        room1 = self.rooms[0]
+        top = room1.top
+        size = room1.size
+        rand_obj_list = [Ball, Key]
+        n_obj = 4
+
+        for i in range(n_obj):
+            rand_coord = top[0] + np.random.randint(1, size[0] - 1), top[1] + np.random.randint(1, size[1] - 1)
+            if all(rand_coord == self.agent_pos):
+                continue
+            rand_obj = rand_obj_list[np.random.randint(len(rand_obj_list))]
+            self.put_obj(rand_obj(rand_color()), *rand_coord)
+
+
+class BallPit(MultiRoomEnv):
+    def __init__(self, minNumRooms, maxNumRooms, maxRoomSize):
+        super().__init__(minNumRooms=minNumRooms,
+                         maxNumRooms=maxNumRooms,
+                         maxRoomSize=maxRoomSize)
+
+    def _gen_grid(self, width, height):
+        super()._gen_grid(width,height)
+
+        rand_obj_list = [Ball, Key]
+        n_obj = [2, 2, 1, 1, 1, 1, 1]
+
+        for num_room, room in enumerate(self.rooms):
+            top = room.top
+            size = room.size
+
+            n_obj_set = 0
+            while n_obj_set != n_obj[num_room]:
+
+                rand_coord = top[0] + np.random.randint(1, size[0] - 1), top[1] + np.random.randint(1, size[1] - 1)
+
+                around_coord = [(rand_coord[0] + i, rand_coord[1] + j) for i, j in [(0, 1), (0, -1), (1, 0), (-1, 0)]]
+                rand_coord_obj = self.grid.get(*rand_coord)
+                if not (isinstance(rand_coord_obj, Floor) or rand_coord_obj is None):
+                    continue
+
+                if all(rand_coord == self.agent_pos) or all(rand_coord == self.goal_pos):
+                    continue
+
+                if any([isinstance(self.grid.get(*c), gym_minigrid.minigrid.Door) for c in around_coord]):
+                    continue
+
+                rand_obj = rand_obj_list[np.random.randint(len(rand_obj_list))]
+                self.put_obj(rand_obj(rand_color()), *rand_coord)
+                n_obj_set += 1
+
+
+
 class MultiRoomEnvN7S4(MultiRoomEnv):
     def __init__(self):
         super().__init__(
@@ -599,6 +695,14 @@ class MultiRoomEnvN10S4(MultiRoomEnv):
             minNumRooms=10,
             maxNumRooms=10,
             maxRoomSize=4
+        )
+
+class MultiRoomEnvN4S6(MultiRoomEnv):
+    def __init__(self):
+        super().__init__(
+            minNumRooms=4,
+            maxNumRooms=4,
+            maxRoomSize=6
         )
 
 class MultiRoomEnvN12S10(MultiRoomEnv):
@@ -627,6 +731,24 @@ class LongCorridorObstructedBlocked(LongCorridorObstructed):
         super().__init__(blocking=True
         )
 
+
+class MultiRoomEnvN5S10(MultiRoomEnv):
+    def __init__(self):
+        super().__init__(
+            minNumRooms=5,
+            maxNumRooms=5,
+            maxRoomSize=10
+        )
+
+class BallPitN4S6(BallPit):
+    def __init__(self):
+        super().__init__(
+            minNumRooms=4,
+            maxNumRooms=4,
+            maxRoomSize=6
+        )
+
+
 def rand_color():
     return np.random.choice(list(COLOR_TO_IDX.keys()))
 
@@ -648,8 +770,19 @@ register(
 
 register(
     id='MiniGrid-MultiRoom-N10-S4-v0',
-    entry_point='src.env_utils:MultiRoomEnvN10S10'
+    entry_point='src.env_utils:MultiRoomEnvN10S4'
 )
+
+register(
+    id='MiniGrid-MultiRoom-N5-S10-v0',
+    entry_point='src.env_utils:MultiRoomEnvN5S10'
+)
+
+register(
+    id='MiniGrid-MultiRoom-N4-S6-v0',
+    entry_point='src.env_utils:MultiRoomEnvN4S6'
+)
+
 
 register(
     id='MiniGrid-PlayGround-v0',
@@ -666,4 +799,7 @@ register(
     entry_point='src.env_utils:LongCorridorObstructedBlocked'
 )
 
-a = LongCorridorObstructed()
+register(
+    id='MiniGrid-BallPit-v0',
+    entry_point='src.env_utils:BallPitN4S6'
+)
