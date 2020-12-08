@@ -225,7 +225,8 @@ class Environment:
 
         action_acted = any(oracle_acted)
         action_acted = torch.tensor(action_acted).view(1, 1)
-        #
+
+
         # if not action_acted: #any(oracle_acted) != action_acted:
         #     #print(oracle_acted_after[3].encode(), oracle_acted_before[3].encode())
         #     print("Oh no.")
