@@ -16,6 +16,8 @@ import numpy as np
 
 import torch
 from torch import multiprocessing as mp
+mp.set_sharing_strategy('file_system')
+
 from torch import nn
 from torch.nn import functional as F
 
@@ -232,8 +234,6 @@ def train(flags):
         context_method = "spawn"
     else:
         context_method = "fork"
-
-    ctx = mp.get_context(context_method)
 
     ctx = mp.get_context(context_method)
     free_queue = ctx.SimpleQueue()
