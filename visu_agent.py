@@ -70,7 +70,10 @@ if 'MiniGrid' in args.env:
     if args.use_fullobs_policy:
         model = models.FullObsMinigridPolicyNet(env.observation_space.shape, env.action_space.n)
     else:
-        model = models.MinigridPolicyNet(env.observation_space, env.action_space.n)
+        if 'Sound' in args.env or 'sound' in args.env:
+            model = models.MinigridPolicyNet_Sound(env.observation_space, env.action_space.n)
+        else:
+            model = models.MinigridPolicyNet(env.observation_space, env.action_space.n)
 
     embedder_model = models.MinigridStateEmbeddingNet(env.observation_space)
 

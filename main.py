@@ -37,3 +37,7 @@ def main(flags):
 if __name__ == '__main__':
     flags = parser.parse_args()
     main(flags)
+
+#python main.py --model vanilla --env MiniGrid-FetchEnvSoundS8N3-v0 --total_frames 1000000 --num_actors 3 --savedir outputs/ 
+#python visu_agent.py --expe_path outputs/torchbeast-20250122-111049 --env MiniGrid-FetchEnvSoundS8N3-v0
+#python visu_agent.py --expe_path outputs/torchbeast-20250120-155603 --env MiniGrid-MultiRoom-N2-S4-v0

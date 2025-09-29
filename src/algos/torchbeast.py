@@ -30,6 +30,7 @@ from src.env_utils import FrameStack
 from src.utils import get_batch, log, create_env, create_buffers, act
 
 MinigridPolicyNet = models.MinigridPolicyNet
+MinigridPolicyNet_Sound = models.MinigridPolicyNet_Sound
 MarioDoomPolicyNet = models.MarioDoomPolicyNet
 
 def learn(actor_model,
@@ -120,9 +121,11 @@ def train(flags):
     env = create_env(flags)
     if flags.num_input_frames > 1:
         env = FrameStack(env, flags.num_input_frames)
-
-    if 'MiniGrid' in flags.env: 
-        model = MinigridPolicyNet(env.observation_space, env.action_space.n)
+    if 'MiniGrid' in flags.env:
+        if 'sound' in flags.env or 'Sound' in flags.env:
+            model = MinigridPolicyNet_Sound(env.observation_space, env.action_space.n)
+        else:
+            model = MinigridPolicyNet(env.observation_space, env.action_space.n)
     else:
         model = MarioDoomPolicyNet(env.observation_space.shape, env.action_space.n)
 
@@ -160,8 +163,12 @@ def train(flags):
         actor_processes.append(actor)
 
     if 'MiniGrid' in flags.env: 
-        learner_model = MinigridPolicyNet(env.observation_space, env.action_space.n)\
-            .to(device=flags.device)
+        if 'sound' in flags.env or 'Sound' in flags.env:
+            learner_model = MinigridPolicyNet_Sound(env.observation_space, env.action_space.n)\
+                .to(device=flags.device)
+        else:
+            learner_model = MinigridPolicyNet(env.observation_space, env.action_space.n)\
+                .to(device=flags.device)
     else:
         learner_model = MarioDoomPolicyNet(env.observation_space.shape, env.action_space.n)\
             .to(device=flags.device)

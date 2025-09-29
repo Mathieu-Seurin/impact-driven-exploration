@@ -142,7 +142,7 @@ def create_buffers(obs_dict, num_actions, flags) -> Buffers:
         train_state_count=dict(size=(T + 1, ), dtype=torch.float32),
     )
 
-    if "sound" in obs_dict.keys():
+    if "sound" in list(obs_dict.keys()):
         sound_shape = obs_dict["sound"].shape
         specs["sound"] = dict(size=(T + 1, *sound_shape), dtype=torch.float32)
 
