@@ -1,13 +1,10 @@
 import torch
 
 import gymnasium as gym
-#import gym
+import ale_py
+gym.register_envs(ale_py)
 
 import src.models as models
-
-#from src.env_utils import Environment, ActionActedWrapper, Minigrid2Image, VizdoomSparseWrapper, NoisyBackgroundWrapper, NoisyWallWrapper
-#import src.atari_wrappers as atari_wrappers
-#import vizdoomgym
 
 from src.env_utils import Environment
 
@@ -18,8 +15,7 @@ from torch.distributions import Categorical
 
 parser = argparse.ArgumentParser(description='PyTorch Scalable Agent')
 parser.add_argument('--env', type=str, default='MiniGrid-',
-                    help='Gym environment. Other options are: SuperMarioBros-1-1-v0 \
-                    or VizdoomMyWayHomeDense-v0 etc.')
+                    help='Gym environment. Options: MiniGrid-*, ALE/Pong-v5, ALE/Breakout-v5, etc.')
 
 parser.add_argument('--expe_path', type=str,
                     help='absolute path where model, optimizer etc.. are stored')
@@ -30,7 +26,13 @@ parser.add_argument('--stop_visu', action='store_true')
 parser.add_argument('--fix_seed', action='store_true')
 parser.add_argument('--env_seed', default=1, type=int)
 
-
+# Atari-specific arguments
+parser.add_argument('--atari', action='store_true',
+                    help='Use Atari environment (automatically detected from env name)')
+parser.add_argument('--frame_stack', type=int, default=4,
+                    help='Number of frames to stack for Atari (default: 4)')
+parser.add_argument('--use_sound', action='store_true',
+                    help='Use sound observations (for sound-enabled envs)')
 
 args = parser.parse_args()
 
@@ -46,38 +48,70 @@ action2name = dict([
 
 
 is_minigrid = "MiniGrid" in args.env
+is_atari = "ALE/" in args.env or args.atari or any(game in args.env for game in ["Pong", "Breakout", "SpaceInvaders", "Seaquest"])
 
 if is_minigrid:
     env = gym.make(args.env, render_mode="human")
-    #env = Minigrid2Image(env)
     if args.noisy_wall:
+        from src.env_utils import NoisyWallWrapper
         env = NoisyWallWrapper(env)
-    #env = ActionActedWrapper(env)
 
-    #env.unwrapped.max_steps=1000
+elif is_atari:
+    # Import Atari-specific wrappers from minisound
+    import sys
+    sys.path.insert(0, path.join(path.dirname(path.dirname(path.abspath(__file__))), 'minisound'))
+
+    from minigrid.core.sound_processors import STFTSoundProcessor, NoSoundProcessor
+    from minigrid.envs.atari_sound import make_atari_sound_env
+    from minigrid.wrappers import AtariPreprocessingWrapper, FrameStackWrapper
+
+    render_mode = "human" if not args.stop_visu else None
+
+    # Create Atari environment with or without sound
+    if args.use_sound:
+        sound_processor = STFTSoundProcessor(sample_rate=16000)
+    else:
+        sound_processor = NoSoundProcessor()
+
+    env = make_atari_sound_env(
+        args.env,
+        sound_processor=sound_processor,
+        render_mode=render_mode
+    )
+
+    # Apply standard Atari preprocessing
+    env = AtariPreprocessingWrapper(env, screen_size=84, grayscale=True, scale=True)
+    env = FrameStackWrapper(env, num_stack=args.frame_stack)
 
 else:
-    env = atari_wrappers.wrap_pytorch(
-        atari_wrappers.wrap_deepmind(
-            atari_wrappers.make_atari(args.env, noop=False),
-            clip_rewards=False,
-            frame_stack=True,
-            scale=False,
-            fire=False))
-    env = ActionActedWrapper(VizdoomSparseWrapper(env))
+    raise ValueError(f"Unknown environment type: {args.env}")
 
-if 'MiniGrid' in args.env:
+if is_minigrid:
     if args.use_fullobs_policy:
         model = models.FullObsMinigridPolicyNet(env.observation_space.shape, env.action_space.n)
     else:
-        if 'Sound' in args.env or 'sound' in args.env:
+        if 'Sound' in args.env or 'sound' in args.env or args.use_sound:
             model = models.MinigridPolicyNet_Sound(env.observation_space, env.action_space.n)
         else:
             model = models.MinigridPolicyNet(env.observation_space, env.action_space.n)
 
     embedder_model = models.MinigridStateEmbeddingNet(env.observation_space)
 
+elif is_atari:
+    # Atari environments always use AtariPolicyNet_Sound architecture
+    # (it handles both sound and no-sound cases via NoSoundProcessor)
+    model = models.AtariPolicyNet_Sound(env.observation_space, env.action_space.n)
+
+    # For embedder, use the image shape from observation space
+    if hasattr(env.observation_space, 'spaces'):
+        # Dict observation space (with sound)
+        embedder_model = models.MarioDoomStateEmbeddingNet(env.observation_space["image"].shape)
+    else:
+        # Box observation space (no sound)
+        embedder_model = models.MarioDoomStateEmbeddingNet(env.observation_space.shape)
+
 else:
+    # Default to MarioDoom models for other environments
     model = models.MarioDoomPolicyNet(env.observation_space.shape, env.action_space.n)
     embedder_model = models.MarioDoomStateEmbeddingNet(env.observation_space.shape)
 
@@ -95,9 +129,12 @@ if 'state_embedding_model_state_dict' in checkpoint:
     embedder_model.load_state_dict(checkpoint['state_embedding_model_state_dict'])
 
 print(env)
-print(env.unwrapped.grid)
+if is_minigrid:
+    print(env.unwrapped.grid)
 
-env.metadata["render_fps"] = 30
+if hasattr(env, 'metadata'):
+    env.metadata["render_fps"] = 30
+
 env = Environment(env, fix_seed=args.fix_seed, env_seed=args.env_seed)
 env_output = env.initial()
 print(env.gym_env)
@@ -113,7 +150,15 @@ state_embedding = embedder_model(env_output['frame'])
 #     #print("Arr", arr)
 #     w.show_img(arr)
 
-while True :
+print(f"\nStarting visualization loop...")
+print(f"Action space: {env.gym_env.action_space.n} actions")
+print(f"Observation space: {env.gym_env.observation_space}\n")
+
+step_count = 0
+episode_count = 0
+episode_reward = 0
+
+while True:
     model_output, agent_state = model(env_output, agent_state)
 
     # action = model_output["action"]
@@ -126,6 +171,9 @@ while True :
     # action = torch.tensor([0])
     env_output = env.step(action)
 
+    episode_reward += env_output['reward'].item()
+    step_count += 1
+
     next_state_embedding = embedder_model(env_output['frame'])
 
     #print(action2name[action.item()], torch.abs(state_embedding - next_state_embedding).sum())
@@ -133,13 +181,20 @@ while True :
     state_embedding = next_state_embedding
 
     if env_output['done']:
+        episode_count += 1
+        print(f"Episode {episode_count} finished | Steps: {step_count} | Reward: {episode_reward:.2f}")
         agent_state = model.initial_state(batch_size=1)
+        step_count = 0
+        episode_reward = 0
         #print(env.env_seed)
 
-    #rgb_arr = env.gym_env.render('rgb_array')
-    if not args.stop_visu and is_minigrid:
-        #w.show_img(rgb_arr)
-        env.gym_env.render()
+    # Render environment
+    if not args.stop_visu:
+        if is_minigrid:
+            env.gym_env.render()
+        elif is_atari:
+            # Atari rendering is handled automatically with render_mode="human"
+            pass
 
     #print(env.gym_env)
     #time.sleep(0.001)

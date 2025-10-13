@@ -674,13 +674,13 @@ class MarioDoomForwardDynamicsNet(nn.Module):
 class MarioDoomInverseDynamicsNet(nn.Module):
     def __init__(self, num_actions):
         super(MarioDoomInverseDynamicsNet, self).__init__()
-        self.num_actions = num_actions 
+        self.num_actions = num_actions
 
         init_ = lambda m: init(m, nn.init.orthogonal_, lambda x: nn.init.
                             constant_(x, 0), nn.init.calculate_gain('relu'))
         self.inverse_dynamics = nn.Sequential(
-            init_(nn.Linear(2 * 288, 256)), 
-            nn.ReLU(), 
+            init_(nn.Linear(2 * 288, 256)),
+            nn.ReLU(),
         )
 
         init_ = lambda m: init(m, nn.init.orthogonal_, lambda x: nn.init.
@@ -688,10 +688,165 @@ class MarioDoomInverseDynamicsNet(nn.Module):
 
         self.id_out = init_(nn.Linear(256, self.num_actions))
 
-        
+
     def forward(self, state_embedding, next_state_embedding):
         inputs = torch.cat((state_embedding, next_state_embedding), dim=2)
         action_logits = self.id_out(self.inverse_dynamics(inputs))
         return action_logits
-    
+
+
+class AtariPolicyNet_Sound(nn.Module):
+    """
+    Atari policy network with sound observations.
+
+    Architecture:
+    - Vision encoder: CNN for frame-stacked images (Nature DQN style)
+    - Sound encoder: 1D CNN for STFT spectrograms
+    - Fusion: Concatenate features → LSTM → Policy + Value heads
+    """
+    def __init__(self, observation_dict, num_actions):
+        super(AtariPolicyNet_Sound, self).__init__()
+        # observation_dict contains 'image' and 'sound' keys from observation_space
+        self.image_shape = observation_dict["image"].shape  # (C, H, W) where C is num stacked frames
+        self.sound_shape = observation_dict["sound"].shape  # (freq_bins, time_frames)
+        self.num_actions = num_actions
+
+        init_ = lambda m: init(m, nn.init.orthogonal_, lambda x: nn.init.
+                                constant_(x, 0), nn.init.calculate_gain('relu'))
+
+        # Vision encoder - Nature DQN architecture adapted for frame-stacked input
+        # Input: (num_frames, 84, 84) from AtariPreprocessingWrapper + FrameStackWrapper
+        self.vision_encoder = nn.Sequential(
+            init_(nn.Conv2d(in_channels=self.image_shape[0], out_channels=32, kernel_size=(8, 8), stride=4)),
+            nn.ReLU(),
+            init_(nn.Conv2d(in_channels=32, out_channels=64, kernel_size=(4, 4), stride=2)),
+            nn.ReLU(),
+            init_(nn.Conv2d(in_channels=64, out_channels=64, kernel_size=(3, 3), stride=1)),
+            nn.ReLU(),
+        )
+
+        # Compute vision feature size dynamically
+        with torch.no_grad():
+            dummy_vision = torch.zeros(1, *self.image_shape)
+            vision_out = self.vision_encoder(dummy_vision)
+            self.vision_feature_size = int(np.prod(vision_out.shape[1:]))
+
+        # Sound encoder - Adaptive 1D CNN for STFT features
+        # Input: (freq_bins, time_frames) from STFTSoundProcessor
+        # Use smaller kernels and adaptive pooling to handle variable time dimensions
+
+        # Determine kernel sizes based on input size
+        n_freq_bins, n_time_frames = self.sound_shape
+
+        # Use adaptive architecture based on time dimension
+        if n_time_frames < 4:
+            # Very small time dimension - use simple linear projection
+            self.sound_encoder = nn.Sequential(
+                nn.Flatten(),
+                init_(nn.Linear(n_freq_bins * n_time_frames, 256)),
+                nn.ReLU(),
+            )
+            self.sound_feature_size = 256
+        else:
+            # Sufficient time dimension - use 1D CNN with smaller kernels
+            kernel_sizes = []
+            if n_time_frames >= 8:
+                kernel_sizes = [min(4, n_time_frames), 3, 3]
+            elif n_time_frames >= 4:
+                kernel_sizes = [3, 3]
+
+            layers = []
+            in_channels = n_freq_bins
+            out_channels = 64
+
+            for k in kernel_sizes:
+                layers.append(init_(nn.Conv1d(in_channels, out_channels, kernel_size=k, stride=1, padding=k//2)))
+                layers.append(nn.ReLU())
+                in_channels = out_channels
+                out_channels = min(out_channels * 2, 256)
+
+            # Add adaptive pooling to get fixed output size
+            layers.append(nn.AdaptiveAvgPool1d(4))
+            layers.append(nn.Flatten())
+
+            self.sound_encoder = nn.Sequential(*layers)
+
+            # Compute sound feature size dynamically
+            with torch.no_grad():
+                dummy_sound = torch.zeros(1, *self.sound_shape)
+                sound_out = self.sound_encoder(dummy_sound)
+                self.sound_feature_size = int(np.prod(sound_out.shape[1:]))
+
+        # Combined feature size
+        combined_size = self.vision_feature_size + self.sound_feature_size
+
+        # LSTM core
+        self.core = nn.LSTM(combined_size, 512, 2)
+
+        # Policy and value heads
+        init_ = lambda m: init(m, nn.init.orthogonal_, lambda x: nn.init.
+                                constant_(x, 0))
+
+        self.policy = init_(nn.Linear(512, self.num_actions))
+        self.baseline = init_(nn.Linear(512, 1))
+
+    def initial_state(self, batch_size):
+        return tuple(torch.zeros(self.core.num_layers, batch_size,
+                                self.core.hidden_size) for _ in range(2))
+
+    def forward(self, inputs, core_state=()):
+        # inputs['frame']: [T x B x C x H x W]
+        # inputs['sound']: [T x B x freq_bins x time_frames]
+        # inputs['done']: [T x B]
+
+        # Process vision
+        x_vision = inputs['frame']
+        T, B, C, H, W = x_vision.shape
+        x_vision = x_vision.view(T * B, C, H, W)
+        x_vision = x_vision.float() / 255.0
+        x_vision = self.vision_encoder(x_vision)
+        x_vision = x_vision.view(T * B, -1)
+
+        # Process sound
+        x_sound = inputs['sound']
+        _, _, n_frames, N = x_sound.shape
+        x_sound = x_sound.view(T * B, n_frames, N)
+        x_sound = x_sound.float()
+        x_sound = self.sound_encoder(x_sound)
+        # Sound encoder already flattens, so we just ensure it's the right shape
+        if x_sound.dim() > 2:
+            x_sound = x_sound.view(T * B, -1)
+
+        # Concatenate features
+        core_input = torch.cat([x_vision, x_sound], dim=1)
+        core_input = core_input.view(T, B, -1)
+
+        # LSTM processing with done mask
+        core_output_list = []
+        notdone = (~inputs['done']).float()
+        for input, nd in zip(core_input.unbind(), notdone.unbind()):
+            nd = nd.view(1, -1, 1)
+            core_state = tuple(nd * s for s in core_state)
+            output, core_state = self.core(input.unsqueeze(0), core_state)
+            core_output_list.append(output)
+        core_output = torch.flatten(torch.cat(core_output_list), 0, 1)
+
+        # Policy and value
+        policy_logits = self.policy(core_output)
+        baseline = self.baseline(core_output)
+
+        # Sample action
+        if self.training:
+            action = torch.multinomial(
+                F.softmax(policy_logits, dim=1), num_samples=1)
+        else:
+            action = torch.argmax(policy_logits, dim=1)
+
+        # Reshape outputs
+        policy_logits = policy_logits.view(T, B, self.num_actions)
+        baseline = baseline.view(T, B)
+        action = action.view(T, B)
+
+        return dict(policy_logits=policy_logits, baseline=baseline,
+                    action=action), core_state
 

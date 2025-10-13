@@ -32,6 +32,7 @@ from src.utils import get_batch, log, create_env, create_buffers, act
 MinigridPolicyNet = models.MinigridPolicyNet
 MinigridPolicyNet_Sound = models.MinigridPolicyNet_Sound
 MarioDoomPolicyNet = models.MarioDoomPolicyNet
+AtariPolicyNet_Sound = models.AtariPolicyNet_Sound
 
 def learn(actor_model,
           model,
@@ -126,6 +127,12 @@ def train(flags):
             model = MinigridPolicyNet_Sound(env.observation_space, env.action_space.n)
         else:
             model = MinigridPolicyNet(env.observation_space, env.action_space.n)
+    elif 'ALE' in flags.env or 'Atari' in flags.env:
+        # Atari environment - check if it has sound
+        if hasattr(env.observation_space, 'spaces') and 'sound' in env.observation_space.spaces:
+            model = AtariPolicyNet_Sound(env.observation_space.spaces, env.action_space.n)
+        else:
+            model = MarioDoomPolicyNet(env.observation_space.shape, env.action_space.n)
     else:
         model = MarioDoomPolicyNet(env.observation_space.shape, env.action_space.n)
 
@@ -162,12 +169,20 @@ def train(flags):
         actor.start()
         actor_processes.append(actor)
 
-    if 'MiniGrid' in flags.env: 
+    if 'MiniGrid' in flags.env:
         if 'sound' in flags.env or 'Sound' in flags.env:
             learner_model = MinigridPolicyNet_Sound(env.observation_space, env.action_space.n)\
                 .to(device=flags.device)
         else:
             learner_model = MinigridPolicyNet(env.observation_space, env.action_space.n)\
+                .to(device=flags.device)
+    elif 'ALE' in flags.env or 'Atari' in flags.env:
+        # Atari environment - check if it has sound
+        if hasattr(env.observation_space, 'spaces') and 'sound' in env.observation_space.spaces:
+            learner_model = AtariPolicyNet_Sound(env.observation_space.spaces, env.action_space.n)\
+                .to(device=flags.device)
+        else:
+            learner_model = MarioDoomPolicyNet(env.observation_space.shape, env.action_space.n)\
                 .to(device=flags.device)
     else:
         learner_model = MarioDoomPolicyNet(env.observation_space.shape, env.action_space.n)\

@@ -38,6 +38,10 @@ class Environment:
     def get_partial_obs(self):
         return self.gym_env.unwrapped.gen_obs()['image']
 
+    def is_minigrid(self):
+        """Check if environment is a MiniGrid environment."""
+        return hasattr(self.gym_env.unwrapped, 'carrying')
+
     def initial(self):
         initial_reward = torch.zeros(1, 1)
         self.episode_return = torch.zeros(1, 1)
@@ -51,12 +55,19 @@ class Environment:
             initial_state, info = self.gym_env.reset()
 
         frame = _format_observation(initial_state["image"])
-        partial_obs = _format_observation(self.get_partial_obs())
 
-        if self.gym_env.unwrapped.carrying:
-            carried_col, carried_obj = torch.LongTensor([[COLOR_TO_IDX[self.gym_env.unwrapped.carrying.color]]]), torch.LongTensor([[OBJECT_TO_IDX[self.gym_env.unwrapped.carrying.type]]])
+        # MiniGrid-specific features
+        if self.is_minigrid():
+            partial_obs = _format_observation(self.get_partial_obs())
+
+            if self.gym_env.unwrapped.carrying:
+                carried_col, carried_obj = torch.LongTensor([[COLOR_TO_IDX[self.gym_env.unwrapped.carrying.color]]]), torch.LongTensor([[OBJECT_TO_IDX[self.gym_env.unwrapped.carrying.type]]])
+            else:
+                carried_col, carried_obj = torch.LongTensor([[5]]), torch.LongTensor([[1]])
         else:
-            carried_col, carried_obj = torch.LongTensor([[5]]), torch.LongTensor([[1]])   
+            # Atari: use dummy values for MiniGrid-specific features
+            partial_obs = torch.zeros(1, 7, 7, 3, dtype=torch.uint8)
+            carried_col, carried_obj = torch.LongTensor([[5]]), torch.LongTensor([[1]])
 
         buff = dict(
             frame=frame,
@@ -66,7 +77,7 @@ class Environment:
             episode_step=self.episode_step,
             episode_win=self.episode_win,
             carried_col = carried_col,
-            carried_obj = carried_obj, 
+            carried_obj = carried_obj,
             partial_obs=partial_obs
             )
 
@@ -83,14 +94,14 @@ class Environment:
         episode_step = self.episode_step
 
         self.episode_return += reward
-        episode_return = self.episode_return 
+        episode_return = self.episode_return
 
         if done and reward > 0:
-            self.episode_win[0][0] = 1 
+            self.episode_win[0][0] = 1
         else:
-            self.episode_win[0][0] = 0 
-        episode_win = self.episode_win 
-        
+            self.episode_win[0][0] = 0
+        episode_win = self.episode_win
+
         if done:
             if self.fix_seed:
                 obs, _ = self.gym_env.reset(seed=self.env_seed)
@@ -104,12 +115,19 @@ class Environment:
         frame = _format_observation(obs["image"])
         reward = torch.tensor(reward).view(1, 1)
         done = torch.tensor(done).view(1, 1)
-        partial_obs = _format_observation(self.get_partial_obs())
-        
-        if self.gym_env.unwrapped.carrying:
-            carried_col, carried_obj = torch.LongTensor([[COLOR_TO_IDX[self.gym_env.unwrapped.carrying.color]]]), torch.LongTensor([[OBJECT_TO_IDX[self.gym_env.unwrapped.carrying.type]]])
+
+        # MiniGrid-specific features
+        if self.is_minigrid():
+            partial_obs = _format_observation(self.get_partial_obs())
+
+            if self.gym_env.unwrapped.carrying:
+                carried_col, carried_obj = torch.LongTensor([[COLOR_TO_IDX[self.gym_env.unwrapped.carrying.color]]]), torch.LongTensor([[OBJECT_TO_IDX[self.gym_env.unwrapped.carrying.type]]])
+            else:
+                carried_col, carried_obj = torch.LongTensor([[5]]), torch.LongTensor([[1]])
         else:
-            carried_col, carried_obj = torch.LongTensor([[5]]), torch.LongTensor([[1]])   
+            # Atari: use dummy values for MiniGrid-specific features
+            partial_obs = torch.zeros(1, 7, 7, 3, dtype=torch.uint8)
+            carried_col, carried_obj = torch.LongTensor([[5]]), torch.LongTensor([[1]])
 
         buff = dict(
                 frame=frame,
@@ -119,10 +137,10 @@ class Environment:
                 episode_step = episode_step,
                 episode_win = episode_win,
                 carried_col = carried_col,
-                carried_obj = carried_obj, 
+                carried_obj = carried_obj,
                 partial_obs=partial_obs
             )
-        
+
         if "sound" in obs:
             sound = _format_observation(obs["sound"])
             buff["sound"] = sound

@@ -4,16 +4,17 @@
 # This source code is licensed under the license found in the
 # LICENSE file in the root directory of this source tree.
 
-import torch 
+import torch
 import typing
 
 import gymnasium as gym
+import ale_py  # Required for Atari environments
 
 import threading
 from torch import multiprocessing as mp
 import logging
 import traceback
-import os 
+import os
 import numpy as np
 
 from src.core import prof
@@ -21,6 +22,26 @@ from src.env_utils import FrameStack, Environment, Minigrid2Image
 from src import atari_wrappers as atari_wrappers
 
 from minigrid import wrappers as wrappers
+
+# Import minisound components for Atari sound support
+import sys
+import os
+# Add minisound to path (assuming it's a sibling directory)
+minisound_path = os.path.join(os.path.dirname(__file__), '..', '..', 'minisound')
+if os.path.exists(minisound_path):
+    sys.path.insert(0, minisound_path)
+
+try:
+    from minigrid.envs.atari_sound import make_atari_sound_env
+    from minigrid.core.sound_processors import STFTSoundProcessor
+    from minigrid.wrappers import AtariPreprocessingWrapper, FrameStackWrapper
+    ATARI_SOUND_AVAILABLE = True
+except ImportError:
+    ATARI_SOUND_AVAILABLE = False
+    print("Warning: minisound not found. Atari sound environments will not be available.")
+
+# Register ALE environments
+gym.register_envs(ale_py)
 
 #import gym_super_mario_bros
 # from nes_py.wrappers import JoypadSpace
@@ -65,7 +86,37 @@ def create_env(flags):
         #return Minigrid2Image(wrappers.FullyObsWrapper(gym.make(flags.env)))
         #return wrappers.FullyObsWrapper(gym.make(flags.env))
         return gym.make(flags.env)
-    
+
+    # Handle Atari environments with sound support (default for all Atari)
+    elif 'ALE' in flags.env and ATARI_SOUND_AVAILABLE:
+        # Create Atari environment with sound using minisound
+        # Use target_frames to ensure consistent STFT output size across episodes
+        # This is critical because episode lengths vary in Atari (agent can die early)
+        # For 1 second of audio at 16kHz with hop_length=160: ~100 frames
+        env = make_atari_sound_env(
+            flags.env,
+            sound_processor=STFTSoundProcessor(
+                sample_rate=16000,
+                n_fft=512,
+                hop_length=160,
+                log_scale=True,
+                normalize=True,
+                target_frames=100,  # Fixed size - pad/truncate to ensure consistent buffer dimensions
+            ),
+        )
+
+        # Apply preprocessing (grayscale, resize to 84x84)
+        env = AtariPreprocessingWrapper(
+            env,
+            screen_size=84,
+            grayscale=True,
+            scale=True,
+        )
+
+        # Apply frame stacking (4 frames)
+        env = FrameStackWrapper(env, num_stack=4)
+
+        return env
 
     elif 'Mario' in flags.env:
         env = atari_wrappers.wrap_pytorch(
@@ -74,7 +125,7 @@ def create_env(flags):
                 clip_rewards=False,
                 frame_stack=True,
                 scale=False,
-                fire=True)) 
+                fire=True))
         env = JoypadSpace(env, COMPLETE_MOVEMENT)
         return env
     else:
@@ -84,7 +135,7 @@ def create_env(flags):
                 clip_rewards=False,
                 frame_stack=True,
                 scale=False,
-                fire=False)) 
+                fire=False))
         return env
 
 
@@ -122,8 +173,14 @@ def get_batch(free_queue: mp.SimpleQueue,
 
 def create_buffers(obs_dict, num_actions, flags) -> Buffers:
     T = flags.unroll_length
-    image_shape = obs_dict["image"].shape
-    
+
+    # Handle Dict observation space (MiniGrid, Atari with sound)
+    if hasattr(obs_dict, 'spaces'):
+        image_shape = obs_dict.spaces["image"].shape
+    else:
+        # Handle Box observation space (standard Atari)
+        image_shape = obs_dict.shape
+
     specs = dict(
         frame=dict(size=(T + 1, *image_shape), dtype=torch.uint8),
         reward=dict(size=(T + 1,), dtype=torch.float32),
@@ -142,8 +199,9 @@ def create_buffers(obs_dict, num_actions, flags) -> Buffers:
         train_state_count=dict(size=(T + 1, ), dtype=torch.float32),
     )
 
-    if "sound" in list(obs_dict.keys()):
-        sound_shape = obs_dict["sound"].shape
+    # Add sound buffer if observation space includes sound
+    if hasattr(obs_dict, 'spaces') and "sound" in obs_dict.spaces:
+        sound_shape = obs_dict.spaces["sound"].shape
         specs["sound"] = dict(size=(T + 1, *sound_shape), dtype=torch.float32)
 
     buffers: Buffers = {key: [] for key in specs}
