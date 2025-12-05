@@ -14,7 +14,7 @@ import numpy as np
 from minigrid.core.constants import OBJECT_TO_IDX, COLOR_TO_IDX
 
 def _format_observation(obs):
-    obs = torch.tensor(obs.copy()) # .copy() is to avoid "negative stride error" when converting numpy to torch tensor
+    obs = torch.tensor(obs.copy(), dtype=torch.uint8) # .copy() is to avoid "negative stride error" when converting numpy to torch tensor
     return obs.view((1, 1) + obs.shape) 
 
 class Minigrid2Image(gym.ObservationWrapper):

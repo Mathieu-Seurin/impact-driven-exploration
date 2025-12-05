@@ -4,7 +4,7 @@
 
 ```
 # create a new conda environment
-conda create -n rlsound python=3.9
+conda create -n rlsound python=3.10
 conda activate rlsound
 
 # install impact-driven-rl

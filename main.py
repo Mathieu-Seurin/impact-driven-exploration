@@ -41,3 +41,7 @@ if __name__ == '__main__':
 #python main.py --model vanilla --env MiniGrid-FetchEnvSoundS8N3-v0 --total_frames 1000000 --num_actors 3 --savedir outputs/ 
 #python visu_agent.py --expe_path outputs/torchbeast-20250122-111049 --env MiniGrid-FetchEnvSoundS8N3-v0
 #python visu_agent.py --expe_path outputs/torchbeast-20250120-155603 --env MiniGrid-MultiRoom-N2-S4-v0
+
+# OMP_NUM_THREADS=1 python main.py --model vanilla --env MiniGrid-KeyCorridorS3R1-v0 --total_frames 1000000 --num_actors 3 --savedir outputs/
+
+# OMP_NUM_THREADS=1 python main.py --model vanilla --env MiniGrid-BoutonCorridor-v0 --total_frames 1000000 --num_actors 3 --savedir outputs/
