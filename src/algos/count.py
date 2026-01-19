@@ -178,7 +178,7 @@ def train(flags):
             learner_model = FullObsMinigridPolicyNet(env.observation_space.shape, env.action_space.n)\
                 .to(device=flags.device)
         else:
-            learner_model = MinigridPolicyNet(env.observation_space.shape, env.action_space.n)\
+            learner_model = MinigridPolicyNet(env.observation_space, env.action_space.n)\
                 .to(device=flags.device)
     else:
         learner_model = MarioDoomPolicyNet(env.observation_space.shape, env.action_space.n)\

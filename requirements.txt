@@ -17,9 +17,8 @@ importlib_metadata==8.7.0
 importlib_resources==6.5.2
 nes_py==8.2.1
 nodeenv==1.9.1
-numpy==2.2.6
 olefile==0.47
-opencv-python==4.12.0.88
+opencv-python==4.7.0.72
 packaging==25.0
 pillow==12.0.0
 pip==25.3

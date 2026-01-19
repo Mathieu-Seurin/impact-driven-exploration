@@ -33,6 +33,7 @@ MinigridStateEmbeddingNet = models.MinigridStateEmbeddingNet
 MinigridForwardDynamicsNet = models.MinigridForwardDynamicsNet
 MinigridInverseDynamicsNet = models.MinigridInverseDynamicsNet
 MinigridPolicyNet = models.MinigridPolicyNet
+MinigridPolicyNet_Sound = models.MinigridPolicyNet_Sound
 
 MarioDoomStateEmbeddingNet = models.MarioDoomStateEmbeddingNet
 MarioDoomForwardDynamicsNet = models.MarioDoomForwardDynamicsNet
@@ -200,7 +201,10 @@ def train(flags):
         if flags.use_fullobs_policy:
             model = FullObsMinigridPolicyNet(env.observation_space.shape, env.action_space.n)                        
         else:
-            model = MinigridPolicyNet(env.observation_space.shape, env.action_space.n)                        
+            if 'sound' in flags.env or 'Sound' in flags.env:
+                model = MinigridPolicyNet_Sound(env.observation_space, env.action_space.n)
+            else:
+                model = MinigridPolicyNet(env.observation_space.shape, env.action_space.n)                        
         if flags.use_fullobs_intrinsic:
             state_embedding_model = FullObsMinigridStateEmbeddingNet(env.observation_space.shape)\
                 .to(device=flags.device) 
@@ -220,7 +224,7 @@ def train(flags):
         inverse_dynamics_model = MarioDoomInverseDynamicsNet(env.action_space.n)\
             .to(device=flags.device) 
 
-    buffers = create_buffers(env.observation_space.shape, model.num_actions, flags)
+    buffers = create_buffers(env.observation_space, model.num_actions, flags)
     model.share_memory()
     
     initial_agent_state_buffers = []
@@ -251,7 +255,7 @@ def train(flags):
             learner_model = FullObsMinigridPolicyNet(env.observation_space.shape, env.action_space.n)\
                 .to(device=flags.device)
         else:
-            learner_model = MinigridPolicyNet(env.observation_space.shape, env.action_space.n)\
+            learner_model = MinigridPolicyNet_Sound(env.observation_space, env.action_space.n)\
                 .to(device=flags.device)
     else:
         learner_model = MarioDoomPolicyNet(env.observation_space.shape, env.action_space.n)\

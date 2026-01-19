@@ -30,7 +30,9 @@ from src.env_utils import FrameStack
 from src.utils import get_batch, log, create_env, create_buffers, act
 
 MinigridPolicyNet = models.MinigridPolicyNet
+MinigridPolicyNet_Sound = models.MinigridPolicyNet_Sound
 MinigridStateEmbeddingNet = models.MinigridStateEmbeddingNet
+MinigridStateEmbeddingNet_Sound = models.MinigridStateEmbeddingNet_Sound
 
 MarioDoomPolicyNet = models.MarioDoomPolicyNet
 MarioDoomStateEmbeddingNet = models.MarioDoomStateEmbeddingNet
@@ -58,8 +60,18 @@ def learn(actor_model,
             predicted_embedding = predictor_network(batch, next_state=True)\
                     .reshape(flags.unroll_length, flags.batch_size, 128)
         else:
-            random_embedding = random_target_network(batch['partial_obs'][1:].to(device=flags.device))
-            predicted_embedding = predictor_network(batch['partial_obs'][1:].to(device=flags.device))
+            if 'sound' in flags.env.lower() or 'Sound' in flags.env:
+                # Préparer les inputs pour les réseaux d'embedding avec son
+                embedding_inputs = {
+                    'partial_obs': batch['partial_obs'][1:].to(device=flags.device),
+                    'sound': batch['sound'][1:].to(device=flags.device)
+                }
+                random_embedding = random_target_network(embedding_inputs)
+                predicted_embedding = predictor_network(embedding_inputs)
+            else:
+                # Version originale sans son
+                random_embedding = random_target_network(batch['partial_obs'][1:].to(device=flags.device))
+                predicted_embedding = predictor_network(batch['partial_obs'][1:].to(device=flags.device))
 
         intrinsic_rewards = torch.norm(predicted_embedding.detach() - random_embedding.detach(), dim=2, p=2)
 
@@ -170,19 +182,26 @@ def train(flags):
         if flags.use_fullobs_policy:
             model = FullObsMinigridPolicyNet(env.observation_space.shape, env.action_space.n)                        
         else:
-            model = MinigridPolicyNet(env.observation_space.shape, env.action_space.n)    
+            if 'sound' in flags.env or 'Sound' in flags.env:
+                model = MinigridPolicyNet_Sound(env.observation_space, env.action_space.n)
+            else:
+                model = MinigridPolicyNet(env.observation_space, env.action_space.n)
         if flags.use_fullobs_intrinsic:                        
             random_target_network = FullObsMinigridStateEmbeddingNet(env.observation_space.shape).to(device=flags.device) 
             predictor_network = FullObsMinigridStateEmbeddingNet(env.observation_space.shape).to(device=flags.device)             
         else:
-            random_target_network = MinigridStateEmbeddingNet(env.observation_space.shape).to(device=flags.device) 
-            predictor_network = MinigridStateEmbeddingNet(env.observation_space.shape).to(device=flags.device) 
+            if 'sound' in flags.env or 'Sound' in flags.env:
+                random_target_network = MinigridStateEmbeddingNet_Sound(env.observation_space).to(device=flags.device) 
+                predictor_network = MinigridStateEmbeddingNet_Sound(env.observation_space).to(device=flags.device)
+            else:
+                random_target_network = MinigridStateEmbeddingNet(env.observation_space).to(device=flags.device) 
+                predictor_network = MinigridStateEmbeddingNet(env.observation_space).to(device=flags.device)
     else:
         model = MarioDoomPolicyNet(env.observation_space.shape, env.action_space.n)
         random_target_network = MarioDoomStateEmbeddingNet(env.observation_space.shape).to(device=flags.device) 
         predictor_network = MarioDoomStateEmbeddingNet(env.observation_space.shape).to(device=flags.device) 
     
-    buffers = create_buffers(env.observation_space.shape, model.num_actions, flags)
+    buffers = create_buffers(env.observation_space, model.num_actions, flags)
     
     model.share_memory()
     
@@ -214,7 +233,7 @@ def train(flags):
             learner_model = FullObsMinigridPolicyNet(env.observation_space.shape, env.action_space.n)\
                 .to(device=flags.device)
         else:
-            learner_model = MinigridPolicyNet(env.observation_space.shape, env.action_space.n)\
+            learner_model = MinigridPolicyNet(env.observation_space, env.action_space.n)\
                 .to(device=flags.device)
     else:
         learner_model = MarioDoomPolicyNet(env.observation_space.shape, env.action_space.n)\
