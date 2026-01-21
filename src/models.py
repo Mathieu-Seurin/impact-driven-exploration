@@ -520,30 +520,30 @@ class MinigridStateEmbeddingNet_Sound(nn.Module):
                                    lambda x: nn.init.constant_(x, 0))
         self.fc_combined = init_final(nn.Linear(self.conv_output_size + 64, 128))
         
-def forward(self, inputs):
-    # IMAGE
-    x = inputs['partial_obs']
-    T, B, *_ = x.shape
-    x = torch.flatten(x, 0, 1)
-    x = x.float() / 255.0
-    x = x.transpose(1, 3)
-    x = self.feat_extract(x)
-    x = x.view(T * B, -1)
+    def forward(self, inputs):
+        # IMAGE
+        x = inputs['partial_obs']
+        T, B, *_ = x.shape
+        x = torch.flatten(x, 0, 1)
+        x = x.float() / 255.0
+        x = x.transpose(1, 3)
+        x = self.feat_extract(x)
+        x = x.view(T * B, -1)
 
-    # SOUND
-    x_sound = inputs['sound']
-    if x_sound.dim() == 4:
-        x_sound = x_sound.squeeze(2)
-    x_sound = torch.flatten(x_sound, 0, 1)
-    x_sound = x_sound.float()
-    x_sound = self.sound_mlp(x_sound)
+        # SOUND
+        x_sound = inputs['sound']
+        if x_sound.dim() == 4:
+            x_sound = x_sound.squeeze(2)
+        x_sound = torch.flatten(x_sound, 0, 1)
+        x_sound = x_sound.float()
+        x_sound = self.sound_mlp(x_sound)
 
-    # COMBINE
-    x_combined = torch.cat((x, x_sound), dim=1)
-    state_embedding = self.fc_combined(x_combined)
-    state_embedding = state_embedding.view(T, B, -1)
+        # COMBINE
+        x_combined = torch.cat((x, x_sound), dim=1)
+        state_embedding = self.fc_combined(x_combined)
+        state_embedding = state_embedding.view(T, B, -1)
 
-    return state_embedding
+        return state_embedding
 
 class MinigridInverseDynamicsNet(nn.Module):
     def __init__(self, num_actions):
